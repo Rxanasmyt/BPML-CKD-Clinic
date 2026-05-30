@@ -431,6 +431,175 @@ function PrintModal({ rec, patient, onClose }) {
   );
 }
 
+/* =========================================================================
+   AiSummaryModal — สรุป BPML สำหรับแพทย์ด้วย Claude AI
+   ========================================================================= */
+function AiSummaryModal({ rec, patient, onClose }) {
+  const [apiKey, setApiKey] = React.useState(() => localStorage.getItem("pharm_ckd_claude_key") || "");
+  const [keyInput, setKeyInput] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const [copied, setCopied] = React.useState(false);
+
+  function saveKey() {
+    const k = keyInput.trim();
+    if (!k) return;
+    localStorage.setItem("pharm_ckd_claude_key", k);
+    setApiKey(k);
+    setKeyInput("");
+  }
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    const drpLabels = (rec.drps || []).map((k) => DRP_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
+    const intLabels = (rec.interventions || []).map((k) => INTERVENTION_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
+    const medList = (rec.meds || []).map((m) => `${m.drug} ${m.strength} (${m.dose || "–"})`).join(", ") || "ไม่มีรายการยา";
+    const otcItems = rec.otcHerbal ? (rec.otcDetail || "มีสมุนไพร/ยานอก") : "ไม่มี";
+    const drpText = drpLabels.length ? drpLabels.join(", ") : "ไม่พบ";
+    const intText = intLabels.length ? intLabels.join(", ") : "ไม่มี";
+    const outcomeText = rec.outcome === "accepted" ? "แก้ไขแล้ว" : rec.outcome === "not_accepted" ? `ยังไม่แก้ไข — ${rec.outcomeReason || ""}` : "ไม่ระบุ";
+
+    const prompt = `คุณคือเภสัชกรผู้เชี่ยวชาญด้าน CKD สรุป BPML ต่อไปนี้เป็นข้อความสั้น ชัดเจน สำหรับแพทย์ผู้ดูแล ไม่เกิน 5 bullet points ภาษาไทย:
+
+ผู้ป่วย: ${patient.name} อายุ ${patient.age} ปี HN ${patient.hn}
+CKD ระยะ ${rec.ckdStage} eGFR ${rec.egfr || "–"} K⁺ ${rec.k || "–"}
+รายการยา: ${medList}
+สมุนไพร/OTC: ${otcItems}
+DRP ที่พบ: ${drpText}
+การแทรกแซง: ${intText}
+ผล: ${outcomeText}`;
+
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 600,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (resp.status === 401) throw new Error("API key ไม่ถูกต้อง (401 Unauthorized)");
+      if (resp.status === 429) throw new Error("Rate limit — กรุณารอสักครู่แล้วลองใหม่");
+      if (!resp.ok) throw new Error(`เกิดข้อผิดพลาด HTTP ${resp.status}`);
+      const data = await resp.json();
+      setResult(data.content?.[0]?.text || "ไม่มีข้อความตอบกลับ");
+    } catch (e) {
+      if (e.name === "TypeError") setError("ไม่สามารถเชื่อมต่อเครือข่าย กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต");
+      else setError(e.message);
+    }
+    setLoading(false);
+  }
+
+  function copyToClipboard() {
+    if (!result) return;
+    navigator.clipboard.writeText(result).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 560, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
+        {/* Modal header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🤖</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>สรุป BPML สำหรับแพทย์ (AI)</span>
+          </div>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><Icon name="x" size={20} color="var(--ink-2)" /></button>
+        </div>
+
+        <div style={{ padding: "22px 24px" }}>
+          {/* API key entry if no key stored */}
+          {!apiKey && (
+            <div style={{ marginBottom: 18, padding: "14px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 12 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>กรุณาใส่ Claude API Key</div>
+              <div style={{ fontSize: 12.5, color: "#92400e", marginBottom: 10 }}>ต้องการ Anthropic API Key เพื่อใช้งาน AI สรุป จะเก็บไว้ใน localStorage ของเครื่องนี้เท่านั้น</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="password"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                  style={{ flex: 1, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontFamily: "monospace", background: "var(--surface)", color: "var(--ink)", outline: "none" }}
+                  onKeyDown={(e) => e.key === "Enter" && saveKey()}
+                />
+                <button onClick={saveKey} style={{ padding: "9px 16px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>บันทึก</button>
+              </div>
+            </div>
+          )}
+
+          {apiKey && (
+            <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--ink-2)" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 99, background: "#16a34a" }} />
+              <span>ใช้ API Key ที่บันทึกไว้</span>
+              <button onClick={() => { localStorage.removeItem("pharm_ckd_claude_key"); setApiKey(""); }}
+                style={{ marginLeft: "auto", fontSize: 11.5, color: "#b91c1c", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--sans)" }}>เปลี่ยน Key</button>
+            </div>
+          )}
+
+          {/* Patient info summary */}
+          <div style={{ padding: "10px 14px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12.5, color: "var(--ink-2)", marginBottom: 16, lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--ink)" }}>{patient.name}</strong> · HN {patient.hn} · อายุ {patient.age} ปี · CKD ระยะ {rec.ckdStage} · eGFR {rec.egfr || "–"} · K⁺ {rec.k || "–"}
+          </div>
+
+          {/* Generate button */}
+          {!result && !loading && (
+            <button
+              onClick={generate}
+              disabled={!apiKey}
+              style={{ width: "100%", padding: "12px", background: apiKey ? "#0d9488" : "var(--surface-2)", color: apiKey ? "#fff" : "var(--ink-2)", border: apiKey ? "none" : "1px solid var(--border)", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: apiKey ? "pointer" : "not-allowed", fontFamily: "var(--sans)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              🤖 สรุป AI สำหรับแพทย์
+            </button>
+          )}
+
+          {/* Loading spinner */}
+          {loading && (
+            <div style={{ textAlign: "center", padding: "32px 0" }}>
+              <div style={{ width: 36, height: 36, border: "3px solid var(--border)", borderTopColor: "#0d9488", borderRadius: "50%", animation: "spin .7s linear infinite", margin: "0 auto 14px" }} />
+              <div style={{ fontSize: 13.5, color: "var(--ink-2)" }}>กำลังสร้างสรุป AI...</div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div style={{ padding: "12px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, color: "#b91c1c", fontSize: 13.5, display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14 }}>
+              <Icon name="alert" size={16} color="#b91c1c" />
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>เกิดข้อผิดพลาด</div>
+                <div>{error}</div>
+              </div>
+            </div>
+          )}
+          {error && (
+            <button onClick={generate} disabled={!apiKey} style={{ padding: "9px 18px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>ลองใหม่</button>
+          )}
+
+          {/* Result */}
+          {result && (
+            <div>
+              <div style={{ padding: "16px 18px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 14, color: "var(--ink)", lineHeight: 1.75, whiteSpace: "pre-wrap", marginBottom: 12 }}>{result}</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={copyToClipboard} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: copied ? "#16a34a" : "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
+                  {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+                </button>
+                <button onClick={() => { setResult(null); setError(null); }} style={{ padding: "9px 16px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" }}>สร้างใหม่</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- รายละเอียด + ประวัติ ---------- */
 function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
   const history = records.filter((r) => r.hn === hn).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -440,6 +609,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
   const [selId, setSelId] = React.useState(cur.id);
   const [activeTab, setActiveTab] = React.useState("detail");
   const [printOpen, setPrintOpen] = React.useState(false);
+  const [aiOpen, setAiOpen] = React.useState(false);
   const rec = history.find((r) => r.id === selId) || cur;
   const rRisk = computeRisk(rec);
 
@@ -450,6 +620,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
   return (
     <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1100, margin: "0 auto" }}>
       {printOpen && <PrintModal rec={rec} patient={cur} onClose={() => setPrintOpen(false)} />}
+      {aiOpen && <AiSummaryModal rec={rec} patient={cur} onClose={() => setAiOpen(false)} />}
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}><Icon name="chevron" size={16} color="var(--ink-2)" />กลับ</button>
 
       {/* header */}
@@ -466,6 +637,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
             <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink-2)", marginTop: 5 }}>HN {cur.hn} · {cur.age} ปี · <StageInline stage={cur.ckdStage} /> · {history.length} ครั้งที่บันทึก</div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setAiOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>🤖 สรุป AI สำหรับแพทย์</button>
             <button onClick={() => setPrintOpen(true)} style={ghostBtn}><Icon name="download" size={15} />พิมพ์ / PDF</button>
             <button onClick={() => onEdit(rec)} style={ghostBtn}><Icon name="edit" size={15} />แก้ไข</button>
             <button onClick={() => onNew(cur)} style={primaryBtn}><Icon name="plus" size={16} color="#fff" />บันทึกครั้งใหม่</button>
@@ -623,4 +795,4 @@ function segBtn2(on, k) {
 const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 function fmtDate(s) { if (!s) return "–"; const d = new Date(s); if (isNaN(d)) return s; return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`; }
 
-Object.assign(window, { PatientsList, PatientDetail, fmtDate });
+Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, fmtDate });

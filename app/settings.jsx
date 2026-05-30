@@ -146,6 +146,78 @@ function ChangePinModal({ user, onClose, onUpdated }) {
   );
 }
 
+/* ---------- AiSettingsSection — จัดการ Claude API Key ---------- */
+function AiSettingsSection() {
+  const [key, setKey] = React.useState(() => localStorage.getItem("pharm_ckd_claude_key") || "");
+  const [input, setInput] = React.useState("");
+  const [saved, setSaved] = React.useState(false);
+
+  function saveKey() {
+    const k = input.trim();
+    if (!k) return;
+    localStorage.setItem("pharm_ckd_claude_key", k);
+    setKey(k);
+    setInput("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2200);
+  }
+
+  function removeKey() {
+    localStorage.removeItem("pharm_ckd_claude_key");
+    setKey("");
+    setInput("");
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 4, height: 22, borderRadius: 2, background: "#0d9488" }} />
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", margin: 0 }}>การตั้งค่า AI</h2>
+      </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px 22px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 20 }}>🤖</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink)" }}>Claude API Key (Anthropic)</div>
+            <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 2 }}>ใช้สำหรับฟีเจอร์ "สรุป BPML สำหรับแพทย์ (AI)" ใน PatientDetail</div>
+          </div>
+        </div>
+
+        {key ? (
+          <div style={{ marginBottom: 14, padding: "11px 14px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 99, background: "#16a34a", flexShrink: 0 }} />
+            <span style={{ flex: 1, fontFamily: "monospace", fontSize: 13, color: "#15803d" }}>
+              {key.slice(0, 18)}{"•".repeat(Math.min(20, key.length - 18))}
+            </span>
+            <button onClick={removeKey} style={{ fontSize: 12, color: "#b91c1c", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--sans)" }}>ลบ Key</button>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 14, padding: "10px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, fontSize: 12.5, color: "#92400e" }}>
+            ยังไม่มี API Key — ฟีเจอร์ AI จะไม่สามารถใช้งานได้จนกว่าจะใส่ key
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="password"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={key ? "ใส่ Key ใหม่เพื่อเปลี่ยน..." : "sk-ant-api03-..."}
+            style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontFamily: "monospace", background: "var(--surface)", color: "var(--ink)", outline: "none", boxSizing: "border-box" }}
+            onKeyDown={(e) => e.key === "Enter" && saveKey()}
+          />
+          <button onClick={saveKey} disabled={!input.trim()} style={{ padding: "10px 18px", background: input.trim() ? "#0d9488" : "var(--surface-2)", color: input.trim() ? "#fff" : "var(--ink-2)", border: input.trim() ? "none" : "1px solid var(--border)", borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: input.trim() ? "pointer" : "not-allowed", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>
+            {saved ? "✓ บันทึกแล้ว" : "บันทึก Key"}
+          </button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink-2)" }}>
+          Key จะเก็บเฉพาะใน localStorage ของเครื่องนี้เท่านั้น ไม่ได้ส่งไปยังเซิร์ฟเวอร์ใดๆ ของแอป
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- SettingsPage (realtime Firestore users) ---------- */
 function SettingsPage({ currentUser, onUserUpdated }) {
   const [users, setUsers] = React.useState([]);
@@ -205,6 +277,10 @@ function SettingsPage({ currentUser, onUserUpdated }) {
         <div><strong style={{ color: "var(--ink)" }}>Firebase Firestore:</strong> บัญชีผู้ใช้ทั้งหมดซิงค์ real-time ข้ามอุปกรณ์ — การเปลี่ยน PIN หรือเพิ่มบัญชีใหม่มีผลทันทีทุกเครื่อง</div>
       </div>
 
+      {/* AI Settings section */}
+      <AiSettingsSection />
+
+
       {modal?.type === "add" && (
         <Modal title="เพิ่มบัญชีใหม่" onClose={() => setModal(null)}>
           <UserForm isNew currentUser={currentUser} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
@@ -241,4 +317,4 @@ const mInS = { width: "100%", padding: "10px 12px", border: "1px solid var(--bor
 const mGhostBtn = { display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" };
 const mPrimaryBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px 18px", background: "var(--brand)", color: "#fff", border: "none", borderRadius: 9, fontSize: 14.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" };
 
-Object.assign(window, { SettingsPage, ChangePinModal, Modal });
+Object.assign(window, { SettingsPage, ChangePinModal, Modal, AiSettingsSection });
