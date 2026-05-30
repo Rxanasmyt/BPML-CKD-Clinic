@@ -27,6 +27,14 @@ const THEMES = {
     "--border": "#e6e3d9", "--sidebar": "#2b3a40", "--sidebar-ink": "#cdd6d3",
     "--sidebar-active": "#3a8a86",
   },
+  dark: {
+    label: "Dark Mode (โหมดมืด)",
+    "--brand": "#2dd4bf", "--brand-deep": "#14b8a6", "--brand-soft": "#0f2a2a",
+    "--accent": "#818cf8", "--ink": "#f1f5f9", "--ink-2": "#94a3b8",
+    "--bg": "#0f172a", "--surface": "#1e293b", "--surface-2": "#334155",
+    "--border": "#334155", "--sidebar": "#0f172a", "--sidebar-ink": "#94a3b8",
+    "--sidebar-active": "#1d4ed8",
+  },
 };
 
 function applyTheme(key, density) {

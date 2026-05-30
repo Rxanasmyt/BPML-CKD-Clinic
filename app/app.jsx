@@ -74,7 +74,7 @@ function App() {
     <TweaksPanel>
       <TweakSection label="แนวทางการออกแบบ (Variations)" />
       <TweakRadio label="โทนสี" value={t.theme} onChange={(v) => setTweak("theme", v)}
-        options={[{ value: "teal", label: "Teal" }, { value: "navy", label: "Navy" }, { value: "soft", label: "Soft" }]} />
+        options={[{ value: "teal", label: "Teal" }, { value: "navy", label: "Navy" }, { value: "soft", label: "Soft" }, { value: "dark", label: "Dark" }]} />
       <TweakRadio label="ตำแหน่งเมนู" value={t.navStyle} onChange={(v) => setTweak("navStyle", v)}
         options={[{ value: "sidebar", label: "ด้านข้าง" }, { value: "top", label: "ด้านบน" }]} />
       <TweakSection label="ความหนาแน่น & ตัวอักษร" />
@@ -107,12 +107,20 @@ function App() {
     page = <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />;
   else if (route.view === "form")
     page = <BpmlForm initial={route.editing} user={user} records={records} onSave={saveRecord} onCancel={() => setRoute({ view: route.editing?.id ? "patient" : "dashboard", hn: route.editing?.hn })} />;
+  else if (route.view === "calendar")
+    page = <FollowUpCalendar records={records} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />;
+  else if (route.view === "reports")
+    page = <ReportsPage records={records} user={user} />;
 
   const nav = [
     { v: "dashboard", icon: "dashboard", label: "ภาพรวม" },
     { v: "patients", icon: "patients", label: "ผู้ป่วย" },
+    { v: "calendar", icon: "clock", label: "ปฏิทินนัด" },
     { v: "form", icon: "plus", label: "บันทึกใหม่" },
-    ...(user.role === "admin" ? [{ v: "settings", icon: "shield", label: "จัดการบัญชี" }] : []),
+    ...(user.role === "admin" ? [
+      { v: "reports", icon: "trend", label: "รายงาน" },
+      { v: "settings", icon: "shield", label: "จัดการบัญชี" },
+    ] : []),
   ];
   const sideMode = t.navStyle === "sidebar";
 
