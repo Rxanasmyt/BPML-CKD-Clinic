@@ -251,7 +251,10 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <div style={{ ...fGrid, marginTop: 12 }}>
             <Field label="วันที่" en="Date" w={150}><input type="date" style={inS} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
             <Field label="Scr" unit="mg/dL" w={100}><input style={inS} value={f.scr} onChange={(e) => set("scr", e.target.value)} inputMode="decimal" /></Field>
-            <Field label="eGFR" unit="mL/min" w={110}><input style={{ ...inS, borderColor: f.egfr && Number(f.egfr) < 30 ? "#fca5a5" : undefined }} value={f.egfr} onChange={(e) => set("egfr", e.target.value)} inputMode="decimal" /></Field>
+            <Field label="eGFR" unit="mL/min" w={110}>
+              <input style={{ ...inS, borderColor: f.egfr && Number(f.egfr) < 30 ? "#fca5a5" : undefined }} value={f.egfr} onChange={(e) => set("egfr", e.target.value)} inputMode="decimal" />
+            </Field>
+            <RenalDoseCalc age={f.age} scr={f.scr} onFill={(v) => set("egfr", v)} />
             <Field label="K⁺" unit="mmol/L" w={100}><input style={{ ...inS, borderColor: f.k && (Number(f.k) > 5.5 || Number(f.k) < 3.5) ? "#fca5a5" : undefined }} value={f.k} onChange={(e) => set("k", e.target.value)} inputMode="decimal" /></Field>
             <Field label="Na⁺" unit="mmol/L" w={100}><input style={inS} value={f.na} onChange={(e) => set("na", e.target.value)} inputMode="decimal" /></Field>
             <Field label="BP" unit="mmHg" w={130}>
@@ -327,12 +330,12 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <button type="button" onClick={addMed} style={{ ...ghostBtn, marginTop: 12, borderStyle: "dashed", width: "100%", justifyContent: "center" }}>
             <Icon name="plus" size={16} /> เพิ่มรายการยา
           </button>
-          <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 14, fontSize: 13.5, color: "var(--ink)", cursor: "pointer" }}>
-            <CheckBox on={f.otcHerbal} onClick={() => set("otcHerbal", !f.otcHerbal)} />
-            มียานอก / สมุนไพร / อาหารเสริม <span style={{ color: "var(--ink-2)" }}>(OTC/Herbal/Supplement)</span>
-          </label>
-          {f.otcHerbal && <input style={{ ...inS, marginTop: 8 }} value={f.otcDetail} onChange={(e) => set("otcDetail", e.target.value)} placeholder="ระบุ เช่น ยาลูกกลอน, น้ำมันปลา..." />}
+          <HerbOtcSection items={f.otcItems || []} onChange={(v) => set("otcItems", v)} />
         </FSection>
+
+        {/* DRP Auto-analysis panel */}
+        <DrpAnalysisPanel meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} k={f.k} ckdStage={f.ckdStage}
+          onApplyDrps={(keys) => setF((p) => ({ ...p, drps: [...new Set([...(p.drps || []), ...keys])] }))} />
 
         {/* ส่วนที่ 4 */}
         <FSection n="4" title="ประเมินความปลอดภัยด้านยาใน CKD" en="CKD Safety Screening" defaultOpen
@@ -606,5 +609,266 @@ function segBtn(on, danger) {
 const inS = { width: "100%", padding: "9px 11px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 14, fontFamily: "var(--sans)", color: "var(--ink)", background: "var(--surface)", boxSizing: "border-box", outline: "none" };
 const fGrid = { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "start" };
 const ghostBtn = { display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" };
+
+/* ---------- HerbOtcSection ---------- */
+const HERB_TYPE_INFO = {
+  herb:        { label: "สมุนไพร",   emoji: "🌿", bg: "#f0fdf4", border: "#86efac", color: "#166534" },
+  supplement:  { label: "อาหารเสริม", emoji: "💊", bg: "#eff6ff", border: "#93c5fd", color: "#1e3a8a" },
+  otc:         { label: "ยา OTC",    emoji: "🏪", bg: "#fefce8", border: "#fde047", color: "#713f12" },
+};
+const HERB_FLAG_INFO = {
+  nephrotoxic: { emoji: "🔴", label: "Nephrotoxic" },
+  k:           { emoji: "🟠", label: "K⁺ สูง" },
+  bleeding:    { emoji: "🔵", label: "เลือดออก" },
+  renal:       { emoji: "⚠️", label: "ไตเสื่อม" },
+  contra:      { emoji: "⛔", label: "ห้ามใช้" },
+  bp:          { emoji: "💊", label: "BP" },
+  glucose:     { emoji: "🩸", label: "น้ำตาล" },
+};
+
+function HerbOtcSection({ items, onChange }) {
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState([]);
+  const [showCustom, setShowCustom] = React.useState(false);
+  const [customName, setCustomName] = React.useState("");
+  const [expandedNotes, setExpandedNotes] = React.useState({});
+
+  React.useEffect(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) { setResults([]); return; }
+    const db = (window.HERB_DB || []);
+    setResults(db.filter((h) => h.name?.toLowerCase().includes(q) || h.nameEn?.toLowerCase().includes(q)).slice(0, 10));
+  }, [query]);
+
+  function addItem(item) {
+    if (items.some((x) => x.name === item.name)) { setQuery(""); setResults([]); return; }
+    onChange([...items, { name: item.name, type: item.type || "herb", ckdNote: item.ckdNote || "", flags: item.flags || [], custom: false }]);
+    setQuery(""); setResults([]);
+  }
+
+  function addCustom() {
+    if (!customName.trim()) return;
+    if (items.some((x) => x.name === customName.trim())) { setShowCustom(false); setCustomName(""); return; }
+    onChange([...items, { name: customName.trim(), type: "otc", ckdNote: "", flags: [], custom: true }]);
+    setShowCustom(false); setCustomName("");
+  }
+
+  function removeItem(name) { onChange(items.filter((x) => x.name !== name)); }
+  function toggleNote(name) { setExpandedNotes((p) => ({ ...p, [name]: !p[name] })); }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <MiniLabel>สมุนไพร / ยา OTC / อาหารเสริม</MiniLabel>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <input style={inS} value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="ค้นหาสมุนไพร, ยา OTC, อาหารเสริม..." />
+          {results.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 40, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>
+              {results.map((h) => {
+                const ti = HERB_TYPE_INFO[h.type] || HERB_TYPE_INFO.herb;
+                const alreadyAdded = items.some((x) => x.name === h.name);
+                return (
+                  <div key={h.name} onMouseDown={() => !alreadyAdded && addItem(h)}
+                    style={{ padding: "9px 12px", cursor: alreadyAdded ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)", opacity: alreadyAdded ? 0.5 : 1, background: alreadyAdded ? "var(--surface-2)" : "var(--surface)" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", flex: 1 }}>{ti.emoji} {h.name}{h.nameEn ? <span style={{ color: "var(--ink-2)", fontWeight: 400, fontSize: 12 }}> · {h.nameEn}</span> : null}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: ti.bg, color: ti.color, border: `1px solid ${ti.border}` }}>{ti.label}</span>
+                    {(h.flags || []).map((fl) => HERB_FLAG_INFO[fl] ? <span key={fl} title={HERB_FLAG_INFO[fl].label} style={{ fontSize: 12 }}>{HERB_FLAG_INFO[fl].emoji}</span> : null)}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={() => setShowCustom((o) => !o)}
+          style={{ ...ghostBtn, fontSize: 12.5, padding: "9px 12px", borderStyle: "dashed", whiteSpace: "nowrap" }}>
+          + เพิ่มรายการเอง
+        </button>
+      </div>
+      {showCustom && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <input style={{ ...inS, flex: 1 }} value={customName} onChange={(e) => setCustomName(e.target.value)}
+            placeholder="ระบุชื่อสมุนไพร/ยา/อาหารเสริม..."
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } if (e.key === "Escape") { setShowCustom(false); setCustomName(""); }}} />
+          <button type="button" onClick={addCustom} style={{ ...ghostBtn, color: "var(--brand-deep)", borderColor: "var(--brand)", fontSize: 13 }}>เพิ่ม</button>
+          <button type="button" onClick={() => { setShowCustom(false); setCustomName(""); }} style={{ border: "none", background: "none", cursor: "pointer", padding: "0 6px" }}><Icon name="x" size={16} color="var(--ink-2)" /></button>
+        </div>
+      )}
+      {items.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {items.map((item) => {
+            const ti = HERB_TYPE_INFO[item.type] || HERB_TYPE_INFO.herb;
+            const noteOpen = expandedNotes[item.name];
+            return (
+              <div key={item.name} style={{ border: `1px solid ${ti.border}`, borderRadius: 10, background: ti.bg, padding: "8px 10px", maxWidth: 280 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 6px", borderRadius: 5, background: "rgba(255,255,255,.6)", color: ti.color }}>{ti.emoji} {ti.label}</span>
+                  {item.custom && <span style={{ fontSize: 10, color: "var(--ink-2)", fontStyle: "italic" }}>custom</span>}
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{item.name}</span>
+                  {(item.flags || []).map((fl) => HERB_FLAG_INFO[fl] ? <span key={fl} title={HERB_FLAG_INFO[fl].label} style={{ fontSize: 13 }}>{HERB_FLAG_INFO[fl].emoji}</span> : null)}
+                  {item.ckdNote && (
+                    <button type="button" onClick={() => toggleNote(item.name)}
+                      style={{ border: "none", background: "none", cursor: "pointer", color: ti.color, fontSize: 11, fontWeight: 700, padding: "0 2px" }}>
+                      {noteOpen ? "▲" : "ℹ️"}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => removeItem(item.name)} style={{ border: "none", background: "none", cursor: "pointer", padding: "0 2px" }}><Icon name="x" size={14} color={ti.color} /></button>
+                </div>
+                {noteOpen && item.ckdNote && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: ti.color, lineHeight: 1.45, paddingTop: 6, borderTop: `1px solid ${ti.border}` }}>{item.ckdNote}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- DrpAnalysisPanel ---------- */
+function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, onApplyDrps }) {
+  const [open, setOpen] = React.useState(true);
+
+  const findings = React.useMemo(() => {
+    try {
+      if (typeof window.analyzeDRPs !== "function") return [];
+      return window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage }) || [];
+    } catch (e) { return []; }
+  }, [meds, otcItems, egfr, k, ckdStage]);
+
+  if (!findings.length) return null;
+
+  const highestSev = findings.some((f) => f.severity === "HIGH") ? "HIGH"
+    : findings.some((f) => f.severity === "MEDIUM") ? "MEDIUM" : "LOW";
+  const sevColor = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[highestSev];
+  const sevBg    = { HIGH: "#fef2f2", MEDIUM: "#fffbeb", LOW: "#eff6ff" }[highestSev];
+
+  function applyAll() {
+    const keys = [...new Set(findings.flatMap((f) => f.drpKeys || []))];
+    if (keys.length) onApplyDrps(keys);
+  }
+
+  const SEV_ICON = { HIGH: "⚠️", MEDIUM: "!", LOW: "ℹ️" };
+
+  return (
+    <div style={{ marginBottom: 14, border: `1px solid ${sevColor}40`, borderRadius: 14, overflow: "hidden", background: sevBg }}>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
+        <span style={{ fontSize: 16 }}>🔍</span>
+        <span style={{ flex: 1, fontSize: 14.5, fontWeight: 700, color: sevColor }}>ผลวิเคราะห์ DRP อัตโนมัติ</span>
+        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: sevColor, color: "#fff" }}>{findings.length} รายการ</span>
+        <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", color: sevColor }}><Icon name="chevron" size={18} /></span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 18px 14px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {findings.map((fd, i) => {
+              const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[fd.severity] || "#64748b";
+              return (
+                <div key={i} style={{ border: `1px solid ${sc}30`, borderRadius: 10, padding: "10px 13px", background: "var(--surface)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.severity]} {fd.severity}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.message}</div>
+                      {fd.recommendation && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.recommendation}</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button type="button" onClick={applyAll}
+            style={{ marginTop: 12, ...ghostBtn, color: sevColor, borderColor: sevColor + "60", fontSize: 13, padding: "8px 14px" }}>
+            นำไปใส่ใน DRP ✓
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- RenalDoseCalc ---------- */
+function RenalDoseCalc({ age, scr, onFill }) {
+  const [open, setOpen] = React.useState(false);
+  const [calcAge, setCalcAge] = React.useState(age || "");
+  const [weight, setWeight] = React.useState("");
+  const [calcScr, setCalcScr] = React.useState(scr || "");
+  const [sex, setSex] = React.useState("male");
+
+  React.useEffect(() => { if (age) setCalcAge(age); }, [age]);
+  React.useEffect(() => { if (scr) setCalcScr(scr); }, [scr]);
+
+  const result = React.useMemo(() => {
+    const a = parseFloat(calcAge), w = parseFloat(weight), s = parseFloat(calcScr);
+    if (!a || !w || !s || s <= 0) return null;
+    const sf = sex === "female" ? 0.85 : 1.0;
+    const crcl = ((140 - a) * w * sf) / (72 * s);
+    let stage = "G5";
+    if (crcl >= 90) stage = "G1";
+    else if (crcl >= 60) stage = "G2";
+    else if (crcl >= 45) stage = "G3a";
+    else if (crcl >= 30) stage = "G3b";
+    else if (crcl >= 15) stage = "G4";
+    return { crcl: Math.round(crcl * 10) / 10, stage };
+  }, [calcAge, weight, calcScr, sex]);
+
+  if (!open) {
+    return (
+      <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 1 }}>
+        <button type="button" onClick={() => setOpen(true)}
+          style={{ ...ghostBtn, fontSize: 12, padding: "7px 11px", color: "var(--brand-deep)", borderColor: "var(--brand)", whiteSpace: "nowrap" }}>
+          <Icon name="pill" size={13} />คำนวณ CrCl (C-G)
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--brand)", borderRadius: 12, padding: 14, background: "var(--brand-soft)", flex: "1 1 280px" }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--brand-deep)", flex: 1 }}>คำนวณ CrCl (Cockcroft-Gault)</span>
+        <button type="button" onClick={() => setOpen(false)} style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }}><Icon name="x" size={15} color="var(--ink-2)" /></button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: "1 1 70px" }}>
+          <MiniLabel>อายุ (ปี)</MiniLabel>
+          <input style={inS} value={calcAge} onChange={(e) => setCalcAge(e.target.value)} inputMode="numeric" placeholder="ปี" />
+        </div>
+        <div style={{ flex: "1 1 70px" }}>
+          <MiniLabel>น้ำหนัก (kg)</MiniLabel>
+          <input style={inS} value={weight} onChange={(e) => setWeight(e.target.value)} inputMode="decimal" placeholder="kg" />
+        </div>
+        <div style={{ flex: "1 1 80px" }}>
+          <MiniLabel>Scr (mg/dL)</MiniLabel>
+          <input style={inS} value={calcScr} onChange={(e) => setCalcScr(e.target.value)} inputMode="decimal" placeholder="mg/dL" />
+        </div>
+        <div style={{ flex: "0 0 auto" }}>
+          <MiniLabel>เพศ</MiniLabel>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[["male", "ชาย"], ["female", "หญิง"]].map(([v, t]) => (
+              <button key={v} type="button" onClick={() => setSex(v)}
+                style={{ padding: "8px 10px", borderRadius: 7, border: `1px solid ${sex === v ? "var(--brand)" : "var(--border)"}`, background: sex === v ? "var(--brand)" : "var(--surface)", color: sex === v ? "#fff" : "var(--ink-2)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{t}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {result ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface)", borderRadius: 9, border: "1px solid var(--border)" }}>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: "var(--brand-deep)", fontFamily: "var(--mono)" }}>{result.crcl} mL/min</span>
+            <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>→ CKD {result.stage}</span>
+          </div>
+          <button type="button" onClick={() => { onFill(String(result.crcl)); setOpen(false); }}
+            style={{ ...ghostBtn, color: "var(--brand-deep)", borderColor: "var(--brand)", fontSize: 12.5, padding: "7px 12px" }}>
+            ใส่ค่า eGFR
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "var(--ink-2)", padding: "8px 0" }}>กรอกข้อมูลให้ครบเพื่อคำนวณ</div>
+      )}
+    </div>
+  );
+}
 
 Object.assign(window, { BpmlForm });
