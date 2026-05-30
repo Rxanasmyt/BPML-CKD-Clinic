@@ -18,6 +18,24 @@ function App() {
   const [user, setUser] = React.useState(() => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; } });
   const [records, setRecords] = React.useState([]);
   const [route, setRoute] = React.useState({ view: "dashboard" });
+
+  /* --- PWA install banner --- */
+  const [installPrompt, setInstallPrompt] = React.useState(null);
+  const [installBanner, setInstallBanner] = React.useState(false);
+  React.useEffect(() => {
+    function onBeforeInstall(e) {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setInstallBanner(true);
+    }
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+  }, []);
+  function handleInstall() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    installPrompt.userChoice.then(() => { setInstallPrompt(null); setInstallBanner(false); });
+  }
   const [changePinOpen, setChangePinOpen] = React.useState(false);
   const [syncState, setSyncState] = React.useState("connecting"); // connecting | synced | syncing | error
 
@@ -155,6 +173,28 @@ function App() {
         ) : page}
       </main>
       {themePanel}
+      {installBanner && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 999,
+          background: "#0d9488", color: "#fff",
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "14px clamp(16px, 4vw, 28px)",
+          boxShadow: "0 -4px 24px rgba(0,0,0,.22)",
+          fontFamily: "var(--sans)", fontSize: 14,
+        }}>
+          <span style={{ flex: 1, fontWeight: 500 }}>📲 ติดตั้ง PHARM-CKD บนหน้าจอหลักของคุณ</span>
+          <button onClick={handleInstall} style={{
+            background: "#fff", color: "#0d6e68", border: "none", borderRadius: 8,
+            padding: "8px 18px", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
+            fontFamily: "var(--sans)", flexShrink: 0,
+          }}>ติดตั้ง</button>
+          <button onClick={() => setInstallBanner(false)} style={{
+            background: "rgba(255,255,255,.18)", color: "#fff", border: "none", borderRadius: 8,
+            padding: "8px 14px", fontWeight: 600, fontSize: 13.5, cursor: "pointer",
+            fontFamily: "var(--sans)", flexShrink: 0,
+          }}>ปิด</button>
+        </div>
+      )}
     </div>
   );
 }

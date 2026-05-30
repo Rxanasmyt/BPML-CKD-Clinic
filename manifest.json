@@ -1,0 +1,20 @@
+{
+  "name": "PHARM-CKD Clinic · BPML",
+  "short_name": "PHARM-CKD",
+  "description": "ระบบบันทึก BPML สำหรับคลินิกไตเรื้อรัง",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d3d30",
+  "theme_color": "#0d3d30",
+  "orientation": "portrait-primary",
+  "lang": "th",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["medical", "health"],
+  "shortcuts": [
+    { "name": "บันทึกใหม่", "url": "/?view=form", "description": "เปิดฟอร์มบันทึก BPML ใหม่" },
+    { "name": "ผู้ป่วย", "url": "/?view=patients", "description": "รายชื่อผู้ป่วย" }
+  ]
+}
