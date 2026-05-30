@@ -56,8 +56,8 @@ function _loadScript(src) {
   try {
     await Promise.race([
       (async () => {
-        await _loadScript("https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js");
-        await _loadScript("https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js");
+        await _loadScript("vendor/firebase-app-compat.js");
+        await _loadScript("vendor/firebase-firestore-compat.js");
       })(),
       timeout,
     ]);
