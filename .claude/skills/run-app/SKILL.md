@@ -17,9 +17,17 @@ Expected: `200`
 ### 1. JSX attribute syntax — colon instead of equals
 ```bash
 # Finds prop:value bugs like size:11 (should be size={11})
-grep -rn '\s[a-zA-Z]\+:[0-9]\+[\s/>]' app/*.jsx \
-  | grep -v "style=" | grep -v "\/\/" | grep -v "font-size\|font-weight\|line-height\|border-radius\|z-index\|margin\|padding\|gap\|width\|height\|flex\|color\|background"
-# Must produce NO output
+# Only flags lines with a JSX component tag <ComponentName ... prop:number
+node -e "
+const fs = require('fs');
+['app/patients.jsx','app/dashboard.jsx','app/form.jsx','app/login.jsx','app/app.jsx'].forEach(f => {
+  fs.readFileSync(f,'utf8').split('\n').forEach((line, i) => {
+    if (/<[A-Z][a-zA-Z]+/.test(line) && /\s[a-z][a-zA-Z]+:[0-9]/.test(line))
+      console.log('ISSUE ' + f + ':' + (i+1) + ': ' + line.trim());
+  });
+});
+console.log('check 1 done');
+"
 ```
 
 ### 2. Global function availability — fmtDate must be in data.jsx window export
@@ -33,21 +41,24 @@ console.log('fmtDate exported from data.jsx:', hasExport ? 'OK' : 'MISSING — w
 
 ### 3. overflow:hidden clipping dropdowns
 ```bash
-# Any FSection or MedRow container must NOT have overflow:hidden
+# FSection and MedRow wrapper divs must NOT have overflow:hidden (clips autocomplete dropdowns)
+# Safe overflow:hidden: text-overflow ellipsis spans, modal scroll areas, the dropdown list itself
 node -e "
 const src = require('fs').readFileSync('app/form.jsx','utf8');
 const lines = src.split('\n');
 const bad = [];
 lines.forEach((l,i) => {
-  if (l.includes('overflow') && l.includes('hidden')) {
-    // Check surrounding lines for dropdown-containing components
-    const ctx = lines.slice(Math.max(0,i-5), i+5).join(' ');
-    if (ctx.includes('FSection') || ctx.includes('MedRow') || ctx.includes('position.*relative')) {
-      bad.push((i+1) + ': ' + l.trim());
-    }
-  }
+  if (!l.includes('overflow') || !l.includes('hidden')) return;
+  // Skip: text truncation (has textOverflow), scroll containers (has overflowY), dropdown list itself (has zIndex:9000)
+  if (l.includes('textOverflow') || l.includes('overflowY') || l.includes('zIndex')) return;
+  // Skip: spans (not block containers)
+  if (l.trim().startsWith('<span')) return;
+  // Flag: block-level containers with overflow:hidden that wrap inputs
+  const ctx = lines.slice(Math.max(0,i-10), i+2).join(' ');
+  if (ctx.includes('function F') || ctx.includes('function Med') || ctx.includes('borderRadius: 14') || ctx.includes('borderRadius: 12'))
+    bad.push('line ' + (i+1) + ': ' + l.trim().slice(0,80));
 });
-if (bad.length) console.log('WARNING — overflow:hidden may clip dropdowns:\n' + bad.join('\n'));
+if (bad.length) console.log('ISSUE — overflow:hidden may clip dropdowns:\n' + bad.join('\n'));
 else console.log('overflow check: OK');
 "
 ```
