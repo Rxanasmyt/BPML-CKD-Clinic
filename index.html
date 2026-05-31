@@ -64,6 +64,9 @@
   @keyframes draw-path { from{stroke-dashoffset:1} to{stroke-dashoffset:0} }
   @keyframes ripple    { to{transform:scale(4);opacity:0} }
   @keyframes number-pop{ 0%{transform:scale(1.18)} 60%{transform:scale(0.96)} 100%{transform:scale(1)} }
+  @keyframes toastIn   { from{opacity:0;transform:translateY(16px) scale(0.94)} to{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes shake     { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+  @keyframes slideInCard { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:translateY(0)} }
 
   /* ── Card Modern ── */
   .card-modern {

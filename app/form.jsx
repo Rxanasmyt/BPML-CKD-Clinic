@@ -237,37 +237,59 @@ const FORM_STEPS = [
   { n: '6', label: 'ผลลัพธ์' },
 ];
 
-function FormProgress({ active }) {
+function FormProgress({ active, onStepClick }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 0,
-      background: 'var(--surface)', borderRadius: 12,
-      padding: '10px 16px', marginBottom: 20,
+      background: 'var(--surface)', borderRadius: 14,
+      padding: '12px 18px', marginBottom: 20,
       border: '1px solid var(--border)',
-      boxShadow: '0 1px 4px rgba(0,0,0,.06)',
-      overflowX: 'auto',
+      boxShadow: '0 2px 12px rgba(0,0,0,.07)',
+      overflowX: 'auto', position: 'sticky', top: 0, zIndex: 20,
+      backdropFilter: 'blur(12px)',
     }}>
       {FORM_STEPS.map((s, i) => {
         const done = parseInt(active) > parseInt(s.n);
         const cur  = active === s.n;
         return (
           <React.Fragment key={s.n}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <div onClick={() => onStepClick && onStepClick(s.n)}
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                flexShrink:0, cursor: onStepClick ? 'pointer' : 'default' }}>
               <div style={{
-                width: 26, height: 26, borderRadius: '50%',
-                background: done ? 'var(--brand)' : cur ? 'var(--brand)' : 'var(--surface-2)',
+                width: 30, height: 30, borderRadius: '50%',
+                background: done
+                  ? 'linear-gradient(135deg,var(--brand),var(--brand-deep))'
+                  : cur
+                    ? 'linear-gradient(135deg,var(--brand),var(--brand-deep))'
+                    : 'var(--surface-2)',
                 border: `2px solid ${cur||done ? 'var(--brand)' : 'var(--border)'}`,
                 display: 'grid', placeItems: 'center',
                 color: cur||done ? '#fff' : 'var(--ink-2)',
-                fontSize: 11, fontWeight: 700,
-                transition: 'all 0.2s',
+                fontSize: 11, fontWeight: 800,
+                transition: 'all 0.3s cubic-bezier(0.34,1.2,0.64,1)',
+                transform: cur ? 'scale(1.15)' : 'scale(1)',
+                boxShadow: cur ? '0 0 0 4px rgba(13,148,136,0.2), 0 2px 8px rgba(13,148,136,0.35)' : done ? '0 2px 6px rgba(13,148,136,0.3)' : 'none',
               }}>
                 {done ? '✓' : s.n}
               </div>
-              <span style={{ fontSize: 9.5, fontWeight: cur ? 700 : 500, color: cur ? 'var(--brand)' : 'var(--ink-2)', whiteSpace: 'nowrap' }}>{s.label}</span>
+              <span style={{
+                fontSize: 9.5, fontWeight: cur ? 800 : 500,
+                color: cur ? 'var(--brand-deep)' : done ? 'var(--brand)' : 'var(--ink-2)',
+                whiteSpace: 'nowrap',
+                transition: 'color 0.25s, font-weight 0.2s',
+              }}>{s.label}</span>
             </div>
             {i < FORM_STEPS.length - 1 && (
-              <div style={{ flex: 1, height: 2, minWidth: 16, background: done ? 'var(--brand)' : 'var(--border)', margin: '0 4px', marginBottom: 16, transition: 'background 0.3s' }} />
+              <div style={{
+                flex: 1, height: 3, minWidth: 20,
+                background: done
+                  ? 'linear-gradient(90deg,var(--brand),var(--brand-deep))'
+                  : 'var(--border)',
+                margin: '0 6px', marginBottom: 18, borderRadius: 99,
+                transition: 'background 0.4s ease',
+                boxShadow: done ? '0 1px 4px rgba(13,148,136,0.4)' : 'none',
+              }} />
             )}
           </React.Fragment>
         );
@@ -507,12 +529,22 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     return ckdStageFromEgfr(f.egfr);
   }, [egfrAutoVal, egfrManual, f.egfr]);
 
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+
   function save() {
+    setSaving(true);
     const rec = { ...f, riskScore: risk.score, riskBand: risk.band };
     if (!rec.createdBy) rec.createdBy = user.id;
     rec.meds = rec.meds.filter((m) => m.drug.trim());
     rec.meds.forEach((m) => RecentDrugs.record(m.drug));
-    onSave(rec);
+    setSaved(true);
+    setTimeout(() => { setSaving(false); onSave(rec); }, 400);
+  }
+
+  function scrollToStep(n) {
+    const el = sectionRefs.current[n];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   const valid = f.hn.trim() && f.name.trim() && f.ckdStage;
 
@@ -586,7 +618,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           action={<button onClick={onCancel} style={ghostBtn}><Icon name="x" size={16} />ยกเลิก</button>}
         />
 
-        <FormProgress active={activeStep} />
+        <FormProgress active={activeStep} onStepClick={scrollToStep} />
 
         {/* ส่วนที่ 1 */}
         <div ref={el => sectionRefs.current['1'] = el}>
@@ -893,8 +925,22 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
             <RiskBadge band={risk.band} score={risk.score} />
             <span style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.3 }}>{risk.factors.slice(0, 2).map((x) => x.t).join(" · ") || "ยังไม่มีปัจจัยเสี่ยง"}</span>
           </div>
-          <button onClick={save} disabled={!valid} style={{ ...primaryBtn, opacity: valid ? 1 : .45, cursor: valid ? "pointer" : "not-allowed" }}>
-            <Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล
+          <button onClick={(e) => { if (valid && !saving) { if (window.addRipple) window.addRipple(e); save(); } }}
+            disabled={!valid || saving}
+            style={{ ...primaryBtn,
+              opacity: valid && !saving ? 1 : .45,
+              cursor: valid && !saving ? "pointer" : "not-allowed",
+              background: saved
+                ? "linear-gradient(135deg,#16a34a,#15803d)"
+                : "linear-gradient(135deg,var(--brand),var(--brand-deep))",
+              transition: "background 0.3s, transform 0.15s, box-shadow 0.2s",
+              transform: saving ? "scale(0.97)" : "scale(1)",
+              boxShadow: valid && !saving ? "0 4px 16px rgba(13,148,136,.4)" : "none",
+              position: "relative", overflow: "hidden",
+            }}>
+            {saving
+              ? <><span style={{ width:16,height:16,border:"2px solid rgba(255,255,255,.4)",borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",animation:"spin .6s linear infinite" }} />กำลังบันทึก...</>
+              : <><Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล</>}
           </button>
         </div>
         {!valid && <div style={{ maxWidth: 1080, margin: "6px auto 0", fontSize: 11.5, color: "#b45309" }}>กรอก HN, ชื่อ-สกุล และเลือก CKD stage เพื่อบันทึก</div>}

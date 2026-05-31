@@ -1,65 +1,223 @@
 /* =========================================================================
    patients.jsx — รายชื่อผู้ป่วย (ค้นหา/กรอง/จัดลำดับเสี่ยง) + รายละเอียด/ประวัติ
    ========================================================================= */
-function PatientsList({ records, user, onOpenPatient, onNew }) {
-  const [q, setQ] = React.useState("");
-  const [riskF, setRiskF] = React.useState("all");
-  const [sort, setSort] = React.useState("risk");
+/* ── SVG Empty state illustration ── */
+function EmptyIllustration({ text, sub }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      padding:"52px 24px", gap:14 }}>
+      <svg width="88" height="88" viewBox="0 0 88 88" fill="none">
+        <rect x="14" y="10" width="60" height="70" rx="8" fill="var(--brand-soft)" stroke="var(--brand)" strokeWidth="2"/>
+        <rect x="24" y="26" width="40" height="3" rx="1.5" fill="var(--brand)" opacity=".45"/>
+        <rect x="24" y="34" width="32" height="3" rx="1.5" fill="var(--brand)" opacity=".35"/>
+        <rect x="24" y="42" width="36" height="3" rx="1.5" fill="var(--brand)" opacity=".35"/>
+        <rect x="24" y="50" width="24" height="3" rx="1.5" fill="var(--brand)" opacity=".25"/>
+        <circle cx="44" cy="18" r="5" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2"/>
+        <rect x="38" y="15.5" width="12" height="5" rx="0" fill="var(--surface)"/>
+      </svg>
+      <div style={{ fontSize:15, fontWeight:700, color:"var(--ink)" }}>{text}</div>
+      {sub && <div style={{ fontSize:13, color:"var(--ink-2)", textAlign:"center" }}>{sub}</div>}
+    </div>
+  );
+}
 
-  const scope = user.role === "admin" ? records : records.filter((r) => r.createdBy === user.id);
-  let rows = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
-
-  if (q.trim()) { const s = q.trim().toLowerCase(); rows = rows.filter((r) => r.name.toLowerCase().includes(s) || (r.hn || "").includes(s)); }
-  if (riskF !== "all") rows = rows.filter((r) => r.risk.band === riskF);
-  rows.sort((a, b) => sort === "risk" ? b.risk.score - a.risk.score : (b.date || "").localeCompare(a.date || ""));
-
-  const counts = { all: latestPerPatient(scope).length };
+/* ── Patient Card ── */
+function PatientCard({ r, onOpen, idx }) {
+  const riskColors = { high:"#dc2626", medium:"#d97706", low:"#16a34a" };
+  const riskBg     = { high:"#fef2f2", medium:"#fffbeb", low:"#f0fdf4" };
+  const c = riskColors[r.risk.band];
+  const overdue = r.followUp && r.followUp.due < "2026-05-31";
 
   return (
-    <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1280, margin: "0 auto" }}>
-      <PageHead title="ผู้ป่วยทั้งหมด" sub={`${rows.length} ราย`}
-        action={<button onClick={onNew} style={primaryBtn}><Icon name="plus" size={18} color="#fff" />บันทึกผู้ป่วยใหม่</button>} />
-
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ position: "relative", flex: "1 1 240px" }}>
-          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={17} color="var(--ink-2)" /></span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาด้วยชื่อ หรือ HN"
-            style={{ ...inS, paddingLeft: 38, height: 42 }} />
+    <div onClick={() => onOpen(r.hn)} className="card-modern"
+      style={{ background:"var(--surface)", borderRadius:16, overflow:"hidden",
+        cursor:"pointer", display:"flex",
+        animation:`fadeUp 0.32s ease-out ${Math.min(idx*0.05,0.4)}s both`,
+        borderLeft:`4px solid ${c}` }}>
+      <div style={{ flex:1, padding:"16px 16px 14px" }}>
+        {/* Row 1: name + HN */}
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:10 }}>
+          <div>
+            <div style={{ fontWeight:700, fontSize:14.5, color:"var(--ink)", lineHeight:1.2 }}>{r.name}</div>
+            <div style={{ fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", marginTop:3 }}>
+              HN {r.hn} · {r.age} ปี
+            </div>
+          </div>
+          <StagePill stage={r.ckdStage} />
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["all", "ทั้งหมด"], ["high", "เสี่ยงสูง"], ["medium", "ปานกลาง"], ["low", "ต่ำ"]].map(([k, t]) => (
-            <button key={k} onClick={() => setRiskF(k)} style={segBtn2(riskF === k, k)}>{t}</button>
+
+        {/* Row 2: Lab values */}
+        <div style={{ display:"flex", gap:10, marginBottom:10 }}>
+          {[
+            { label:"eGFR", val:r.egfr||"–", warn: r.egfr && parseFloat(r.egfr)<30 },
+            { label:"K⁺",  val:r.k||"–",    warn: r.k && parseFloat(r.k)>5.5 },
+            { label:"BP",  val:r.bpSys ? `${r.bpSys}/${r.bpDia||"–"}` : "–", warn: r.bpSys && parseFloat(r.bpSys)>=140 },
+          ].map(({ label, val, warn }) => (
+            <div key={label} style={{ flex:1, padding:"6px 8px", background:warn?"#fef2f222":"var(--surface-2)",
+              borderRadius:9, border:`1px solid ${warn?"#fca5a5":"var(--border)"}` }}>
+              <div style={{ fontSize:9.5, color:"var(--ink-2)", marginBottom:2 }}>{label}</div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:13, fontWeight:700,
+                color:warn?"#dc2626":"var(--ink)" }}>{val}</div>
+            </div>
           ))}
         </div>
-        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...inS, width: "auto", height: 42, cursor: "pointer" }}>
+
+        {/* Row 3: Risk + follow-up */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <RiskBadge band={r.risk.band} score={r.risk.score} />
+          {r.followUp ? (
+            <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11.5,
+              color:overdue?"#dc2626":"#d97706",
+              padding:"3px 8px", borderRadius:99,
+              background:overdue?"#fef2f2":"#fffbeb",
+              border:`1px solid ${overdue?"#fca5a5":"#fde68a"}` }}>
+              <Icon name="clock" size:11 color={overdue?"#dc2626":"#d97706"} />
+              {overdue?"เกินกำหนด ":"นัด "}{fmtDate(r.followUp.due)}
+            </div>
+          ) : (
+            <div style={{ fontSize:11.5, color:"var(--ink-2)" }}>{fmtDate(r.date)}</div>
+          )}
+        </div>
+      </div>
+      {/* Right arrow */}
+      <div style={{ display:"flex", alignItems:"center", padding:"0 12px",
+        background:`linear-gradient(90deg,transparent,${riskBg[r.risk.band]}44)` }}>
+        <Icon name="chevronR" size={16} color={c} />
+      </div>
+    </div>
+  );
+}
+
+function PatientsList({ records, user, onOpenPatient, onNew }) {
+  const [q, setQ]       = React.useState("");
+  const [riskF, setRiskF] = React.useState("all");
+  const [sort, setSort] = React.useState("risk");
+  const [view, setView] = React.useState("card"); // card | table
+
+  const scope = user.role === "admin" ? records : records.filter((r) => r.createdBy === user.id);
+  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
+  let rows = [...all];
+
+  if (q.trim()) { const s = q.trim().toLowerCase(); rows = rows.filter((r) => r.name.toLowerCase().includes(s) || (r.hn||"").includes(s)); }
+  if (riskF !== "all") rows = rows.filter((r) => r.risk.band === riskF);
+  rows.sort((a,b) => sort==="risk" ? b.risk.score-a.risk.score : (b.date||"").localeCompare(a.date||""));
+
+  const riskCounts = { high:0, medium:0, low:0 };
+  all.forEach((r) => riskCounts[r.risk.band]++);
+
+  const riskMeta = {
+    high:   { label:"เสี่ยงสูง",  color:"#dc2626", bg:"#fef2f2", border:"#fca5a5" },
+    medium: { label:"ปานกลาง",   color:"#d97706", bg:"#fffbeb", border:"#fde68a" },
+    low:    { label:"ต่ำ",        color:"#16a34a", bg:"#f0fdf4", border:"#bbf7d0" },
+  };
+
+  return (
+    <div style={{ padding:"clamp(18px,2.4vw,30px)", maxWidth:1320, margin:"0 auto" }}>
+
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between",
+        gap:16, marginBottom:20, flexWrap:"wrap", animation:"fadeUp 0.3s ease-out both" }}>
+        <div>
+          <h1 style={{ fontSize:"clamp(20px,2.4vw,27px)", fontWeight:800, color:"var(--ink)", margin:0 }}>
+            ผู้ป่วยทั้งหมด
+          </h1>
+          <p style={{ color:"var(--ink-2)", fontSize:14, margin:"6px 0 0" }}>{all.length} ราย</p>
+        </div>
+        <button onClick={onNew} className="btn-primary"
+          style={{ ...primaryBtn, background:"linear-gradient(135deg,var(--brand),var(--brand-deep))",
+            borderRadius:13, boxShadow:"0 4px 16px rgba(13,148,136,.35)", position:"relative", overflow:"hidden" }}
+          onClick={(e)=>{ if(window.addRipple)window.addRipple(e); onNew(); }}>
+          <Icon name="plus" size={18} color="#fff" />บันทึกผู้ป่วยใหม่
+        </button>
+      </div>
+
+      {/* Stats bar */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:18 }}
+        className="stagger">
+        {[
+          { label:"ทั้งหมด", value:all.length, color:"var(--brand)", bg:"var(--brand-soft)", border:"rgba(13,148,136,.3)" },
+          ...Object.entries(riskMeta).map(([k,m]) => ({ label:m.label, value:riskCounts[k], color:m.color, bg:m.bg, border:m.border })),
+        ].map(({ label, value, color, bg, border }, i) => (
+          <div key={label} style={{ background:bg, border:`1px solid ${border}`, borderRadius:12,
+            padding:"12px 16px", display:"flex", alignItems:"center", gap:10,
+            animation:`fadeUp 0.3s ease-out ${i*0.06}s both` }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:color, flexShrink:0,
+              boxShadow:`0 0 6px ${color}88` }} />
+            <span style={{ flex:1, fontSize:12.5, color, fontWeight:600 }}>{label}</span>
+            <span style={{ fontFamily:"var(--mono)", fontWeight:800, fontSize:20, color }}>{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display:"flex", gap:10, marginBottom:18, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ position:"relative", flex:"1 1 240px" }}>
+          <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}>
+            <Icon name="search" size={17} color="var(--ink-2)" />
+          </span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาด้วยชื่อ หรือ HN"
+            style={{ ...inS, paddingLeft:38, height:42 }} />
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          {[["all","ทั้งหมด"],["high","เสี่ยงสูง"],["medium","ปานกลาง"],["low","ต่ำ"]].map(([k,t]) => (
+            <button key={k} onClick={() => setRiskF(k)} style={segBtn2(riskF===k, k)}>{t}</button>
+          ))}
+        </div>
+        <select value={sort} onChange={(e) => setSort(e.target.value)}
+          style={{ ...inS, width:"auto", height:42, cursor:"pointer" }}>
           <option value="risk">เรียงตามความเสี่ยง</option>
           <option value="date">เรียงตามวันที่ล่าสุด</option>
         </select>
+        {/* View toggle */}
+        <div style={{ display:"flex", border:"1px solid var(--border)", borderRadius:9, overflow:"hidden" }}>
+          {[["card","⊞"],["table","☰"]].map(([v,ico]) => (
+            <button key={v} onClick={() => setView(v)}
+              style={{ padding:"8px 13px", border:"none", cursor:"pointer", fontFamily:"var(--sans)",
+                background: view===v ? "var(--brand)" : "var(--surface)",
+                color: view===v ? "#fff" : "var(--ink-2)", fontSize:15,
+                transition:"all 0.15s" }}>{ico}</button>
+          ))}
+        </div>
       </div>
 
-      <div className="ptbl-wrap" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-        <div className="ptbl-head" style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap: 12, padding: "12px 18px", fontSize: 11.5, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
-          <span>ผู้ป่วย</span><span>ระยะ CKD</span><span>ค่าแล็บ</span><span>ความเสี่ยง</span><span>บันทึกล่าสุด</span><span></span>
-        </div>
-        {rows.length ? rows.map((r) => (
-          <div key={r.id} onClick={() => onOpenPatient(r.hn)} className="prow"
-            style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap: 12, padding: "13px 18px", alignItems: "center", borderBottom: "1px solid var(--border)", cursor: "pointer", borderLeft: "3px solid transparent" }}>
-            <div>
-              <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 14.5 }}>{r.name}</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--ink-2)" }}>HN {r.hn} · {r.age} ปี</div>
-            </div>
-            <div><StagePill stage={r.ckdStage} /></div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>
-              eGFR {r.egfr || "–"}<br />K⁺ {r.k || "–"}
-            </div>
-            <div><RiskBadge band={r.risk.band} score={r.risk.score} />
-              {r.followUp && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 11.5, color: "#d97706" }}><Icon name="clock" size={12} color="#d97706" />นัด {fmtDate(r.followUp.due)}</div>}
-            </div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{fmtDate(r.date)}</div>
-            <Icon name="chevronR" size={16} color="var(--ink-2)" />
+      {/* Card Grid */}
+      {rows.length ? (
+        view === "card" ? (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
+            {rows.map((r, i) => <PatientCard key={r.id} r={r} onOpen={onOpenPatient} idx={i} />)}
           </div>
-        )) : <Empty text="ไม่พบผู้ป่วยตามเงื่อนไข" />}
-      </div>
+        ) : (
+          /* Table view (original) */
+          <div className="ptbl-wrap" style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14, overflow:"hidden" }}>
+            <div className="ptbl-head" style={{ display:"grid", gridTemplateColumns:"1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap:12, padding:"12px 18px", fontSize:11.5, fontWeight:700, color:"var(--ink-2)", textTransform:"uppercase", letterSpacing:.4, background:"var(--surface-2)", borderBottom:"1px solid var(--border)" }}>
+              <span>ผู้ป่วย</span><span>ระยะ CKD</span><span>ค่าแล็บ</span><span>ความเสี่ยง</span><span>บันทึกล่าสุด</span><span></span>
+            </div>
+            {rows.map((r, i) => (
+              <div key={r.id} onClick={() => onOpenPatient(r.hn)} className="prow"
+                style={{ display:"grid", gridTemplateColumns:"1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap:12, padding:"13px 18px",
+                  alignItems:"center", borderBottom:"1px solid var(--border)", cursor:"pointer",
+                  borderLeft:`3px solid ${r.risk.band==="high"?"#dc2626":r.risk.band==="medium"?"#d97706":"#16a34a"}`,
+                  animation:`fadeUp 0.28s ease-out ${Math.min(i*0.04,0.3)}s both` }}>
+                <div>
+                  <div style={{ fontWeight:600, color:"var(--ink)", fontSize:14.5 }}>{r.name}</div>
+                  <div style={{ fontFamily:"var(--mono)", fontSize:11.5, color:"var(--ink-2)" }}>HN {r.hn} · {r.age} ปี</div>
+                </div>
+                <div><StagePill stage={r.ckdStage} /></div>
+                <div style={{ fontFamily:"var(--mono)", fontSize:12, color:"var(--ink-2)", lineHeight:1.5 }}>
+                  eGFR {r.egfr||"–"}<br />K⁺ {r.k||"–"}
+                </div>
+                <div><RiskBadge band={r.risk.band} score={r.risk.score} />
+                  {r.followUp && <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:5, fontSize:11.5, color:"#d97706" }}><Icon name="clock" size={12} color="#d97706" />นัด {fmtDate(r.followUp.due)}</div>}
+                </div>
+                <div style={{ fontSize:12.5, color:"var(--ink-2)" }}>{fmtDate(r.date)}</div>
+                <Icon name="chevronR" size={16} color="var(--ink-2)" />
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <EmptyIllustration text="ไม่พบผู้ป่วยตามเงื่อนไข" sub="ลองเปลี่ยนตัวกรองหรือค้นหาด้วยคำอื่น" />
+      )}
     </div>
   );
 }

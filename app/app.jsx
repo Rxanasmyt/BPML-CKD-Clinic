@@ -1,6 +1,69 @@
 /* =========================================================================
    app.jsx — โครงแอป: Firebase listener, routing, sidebar, Tweaks
    ========================================================================= */
+
+// Toast types: success | error | warning | info
+function ToastContainer({ toasts }) {
+  return (
+    <>
+      <style>{`@keyframes toastIn { from{opacity:0;transform:translateY(16px) scale(0.94)} to{opacity:1;transform:translateY(0) scale(1)} }`}</style>
+      <div style={{ position:"fixed", bottom:24, right:24, zIndex:9999, display:"flex", flexDirection:"column-reverse", gap:10, pointerEvents:"none" }}>
+        {toasts.map(t => <Toast key={t.id} toast={t} />)}
+      </div>
+    </>
+  );
+}
+
+function Toast({ toast }) {
+  const [visible, setVisible] = React.useState(true);
+  // fade out before removal
+  React.useEffect(() => {
+    const t = setTimeout(() => setVisible(false), toast.duration - 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  const icons = { success:"✅", error:"❌", warning:"⚠️", info:"ℹ️" };
+  const colors = {
+    success: { bg:"#f0fdf4", border:"#bbf7d0", text:"#166534", icon:"#16a34a" },
+    error:   { bg:"#fef2f2", border:"#fecaca", text:"#991b1b", icon:"#dc2626" },
+    warning: { bg:"#fffbeb", border:"#fde68a", text:"#92400e", icon:"#d97706" },
+    info:    { bg:"var(--surface)", border:"var(--border)", text:"var(--ink)", icon:"var(--brand)" },
+  };
+  const c = colors[toast.type] || colors.info;
+
+  return (
+    <div style={{
+      pointerEvents:"auto",
+      display:"flex", alignItems:"flex-start", gap:12,
+      padding:"13px 16px", borderRadius:14,
+      background: c.bg, border:`1px solid ${c.border}`,
+      boxShadow:"0 8px 30px rgba(0,0,0,.13), 0 2px 8px rgba(0,0,0,.08)",
+      minWidth:280, maxWidth:380,
+      fontFamily:"var(--sans)", fontSize:14,
+      opacity: visible ? 1 : 0,
+      transform: visible ? "translateY(0) scale(1)" : "translateY(10px) scale(0.96)",
+      transition: "opacity 0.28s ease, transform 0.28s ease",
+      animation: "toastIn 0.35s cubic-bezier(0.22,1,0.36,1) both",
+    }}>
+      <span style={{ fontSize:18, lineHeight:1, flexShrink:0 }}>{icons[toast.type]}</span>
+      <div style={{ flex:1 }}>
+        {toast.title && <div style={{ fontWeight:700, color:c.text, marginBottom:2 }}>{toast.title}</div>}
+        <div style={{ color:c.text, opacity:0.85, fontSize:13.5, lineHeight:1.4 }}>{toast.message}</div>
+      </div>
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = React.useState([]);
+  const show = React.useCallback((message, type="info", title="", duration=3500) => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t, { id, message, type, title, duration }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), duration);
+  }, []);
+  return { toasts, show };
+}
+
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "theme": "teal",
   "density": "regular",
@@ -14,6 +77,9 @@ function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   React.useEffect(() => { applyTheme(t.theme, t.density); }, [t.theme, t.density]);
   React.useEffect(() => { document.documentElement.style.fontSize = (16 * t.fontScale / 100) + "px"; }, [t.fontScale]);
+
+  const { toasts, show: showToast } = useToast();
+  React.useEffect(() => { window.showToast = showToast; }, [showToast]);
 
   const [user, setUser] = React.useState(() => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; } });
   const [records, setRecords] = React.useState([]);
@@ -78,8 +144,10 @@ function App() {
     try {
       const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       const saved = await FirebaseStore.save({ ...rec, time });
+      showToast("บันทึกข้อมูลผู้ป่วยสำเร็จ", "success", "บันทึกแล้ว ✓");
       setRoute({ view: "patient", hn: saved.hn });
     } catch (e) {
+      showToast("บันทึกไม่สำเร็จ กรุณาลองใหม่", "error", "เกิดข้อผิดพลาด");
       // offline fallback: localStorage
       const saved = Store.save({ ...rec });
       setRecords(Store.all());
@@ -195,6 +263,7 @@ function App() {
           }}>ปิด</button>
         </div>
       )}
+      <ToastContainer toasts={toasts} />
     </div>
   );
 }
@@ -214,21 +283,49 @@ function Brand({ topbar }) {
 }
 
 function NavItem({ n, active, onClick, side }) {
+  const [hovered, setHovered] = React.useState(false);
   return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 11,
-      padding: side ? "11px 14px" : "9px 14px",
-      border: "none", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 14, fontWeight: active ? 700 : 500,
-      width: side ? "100%" : "auto", textAlign: "left",
-      borderLeft: active ? '3px solid rgba(255,255,255,0.9)' : '3px solid transparent',
-      paddingLeft: 11,
-      background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
-      transition: 'all 0.15s ease',
-      borderRadius: active ? '0 10px 10px 0' : 10,
-      color: active ? "#fff" : "var(--sidebar-ink)",
-    }}>
-      <Icon name={n.icon} size={19} color={active ? "#fff" : "currentColor"} />{n.label}
-    </button>
+    <div style={{ position:"relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}>
+      <button onClick={onClick} style={{
+        display:"flex", alignItems:"center", gap:11,
+        padding: side ? "11px 14px" : "9px 14px",
+        border:"none", cursor:"pointer", fontFamily:"var(--sans)", fontSize:14,
+        fontWeight: active ? 700 : 500,
+        width: side ? "100%" : "auto", textAlign:"left",
+        borderLeft: active ? '3px solid rgba(255,255,255,0.9)' : '3px solid transparent',
+        paddingLeft:11,
+        background: active
+          ? 'rgba(255,255,255,0.15)'
+          : hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
+        transition:'all 0.18s ease',
+        borderRadius: active ? '0 10px 10px 0' : 10,
+        color: active ? "#fff" : "var(--sidebar-ink)",
+        boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.1), inset 3px 0 8px rgba(255,255,255,0.15)' : 'none',
+      }}>
+        <Icon name={n.icon} size={19} color={active ? "#fff" : "currentColor"} />
+        {n.label}
+      </button>
+      {/* Tooltip - shows on hover, positioned to the right */}
+      {hovered && side && (
+        <div style={{
+          position:"absolute", left:"calc(100% + 10px)", top:"50%",
+          transform:"translateY(-50%)",
+          background:"var(--ink)", color:"#fff",
+          padding:"5px 10px", borderRadius:8,
+          fontSize:12, fontWeight:600, whiteSpace:"nowrap",
+          boxShadow:"0 4px 14px rgba(0,0,0,.25)",
+          pointerEvents:"none", zIndex:100,
+          animation:"fadeIn 0.15s ease both",
+        }}>
+          {n.label}
+          <div style={{ position:"absolute", right:"100%", top:"50%", transform:"translateY(-50%)",
+            width:0, height:0, borderTop:"5px solid transparent", borderBottom:"5px solid transparent",
+            borderRight:"6px solid var(--ink)" }} />
+        </div>
+      )}
+    </div>
   );
 }
 
