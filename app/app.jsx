@@ -146,7 +146,7 @@ function App() {
     <div style={{ minHeight: "100vh", display: sideMode ? "flex" : "block", background: "var(--bg)", fontFamily: "var(--sans)", color: "var(--ink)" }}>
       {changePinOpen && <ChangePinModal user={user} onClose={() => setChangePinOpen(false)} onUpdated={updateCurrentUser} />}
       {sideMode ? (
-        <aside className="sidebar" style={{ width: 232, background: "var(--sidebar)", color: "var(--sidebar-ink)", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+        <aside className="sidebar" style={{ width: 232, background: 'linear-gradient(175deg, var(--sidebar) 0%, color-mix(in srgb,var(--sidebar) 80%,#000) 100%)', color: "var(--sidebar-ink)", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
           <Brand />
           <nav style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
             {nav.map((n) => <NavItem key={n.v} n={n} active={route.view === n.v || (n.v === "patients" && route.view === "patient")} onClick={() => setRoute({ view: n.v })} side />)}
@@ -170,7 +170,7 @@ function App() {
             <div style={{ width: 40, height: 40, border: "3.5px solid var(--border)", borderTopColor: "var(--brand)", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
             <span style={{ fontSize: 15 }}>กำลังเชื่อมต่อ Firebase...</span>
           </div>
-        ) : page}
+        ) : <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>}
       </main>
       {themePanel}
       {installBanner && (
@@ -216,10 +216,15 @@ function Brand({ topbar }) {
 function NavItem({ n, active, onClick, side }) {
   return (
     <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 11, padding: side ? "11px 14px" : "9px 14px", borderRadius: 10,
+      display: "flex", alignItems: "center", gap: 11,
+      padding: side ? "11px 14px" : "9px 14px",
       border: "none", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 14, fontWeight: active ? 700 : 500,
       width: side ? "100%" : "auto", textAlign: "left",
-      background: active ? "var(--sidebar-active)" : "transparent",
+      borderLeft: active ? '3px solid rgba(255,255,255,0.9)' : '3px solid transparent',
+      paddingLeft: 11,
+      background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
+      transition: 'all 0.15s ease',
+      borderRadius: active ? '0 10px 10px 0' : 10,
       color: active ? "#fff" : "var(--sidebar-ink)",
     }}>
       <Icon name={n.icon} size={19} color={active ? "#fff" : "currentColor"} />{n.label}
@@ -227,13 +232,28 @@ function NavItem({ n, active, onClick, side }) {
   );
 }
 
+function getInitials(name) {
+  return name.replace(/^(ภ[ญก]\.|นพ\.|พ[ญก]\.|ดร\.)\s*/,'').trim()
+    .split(/\s+/).slice(0,2).map(w=>w[0]||'').join('');
+}
+function avatarColor(name) {
+  const palette=['#0d9488','#7c3aed','#0284c7','#d97706','#dc2626','#16a34a','#db2777'];
+  const h = [...name].reduce((a,c)=>a+c.charCodeAt(0),0);
+  return palette[h%palette.length];
+}
+
 function UserCard({ user, onLogout, onChangePin, side, compact }) {
   const [open, setOpenLocal] = React.useState(false);
   return (
     <div style={{ position: "relative", padding: side ? 14 : 0 }}>
       <button onClick={() => setOpenLocal((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 10, width: side ? "100%" : "auto", padding: side ? "10px 12px" : "8px 10px", borderRadius: 11, border: "none", background: side ? "rgba(255,255,255,.07)" : "transparent", cursor: "pointer", fontFamily: "var(--sans)" }}>
-        <span style={{ width: 32, height: 32, borderRadius: 9, background: user.role === "admin" ? "#f59e0b" : "var(--sidebar-active)", display: "grid", placeItems: "center", flexShrink: 0 }}>
-          <Icon name={user.role === "admin" ? "shield" : "user"} size={17} color="#fff" />
+        <span style={{
+          width:32, height:32, borderRadius:9,
+          background: user.role==='admin' ? '#f59e0b' : avatarColor(user.name),
+          display:'grid', placeItems:'center', flexShrink:0,
+          fontSize:12, fontWeight:800, color:'#fff', letterSpacing:-0.5, userSelect:'none',
+        }}>
+          {getInitials(user.name)}
         </span>
         {!compact && <span style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
           <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</span>
@@ -243,9 +263,19 @@ function UserCard({ user, onLogout, onChangePin, side, compact }) {
       </button>
       {open && (
         <div style={{ position: "absolute", bottom: side ? "100%" : "auto", top: side ? "auto" : "100%", right: side ? 14 : 0, left: side ? 14 : "auto", marginBottom: side ? 6 : 0, marginTop: side ? 0 : 6, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 11, boxShadow: "0 12px 30px rgba(0,0,0,.18)", overflow: "hidden", zIndex: 50, minWidth: 200 }}>
-          <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{user.name}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>{user.license}</div>
+          <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width:32, height:32, borderRadius:9,
+              background: user.role==='admin' ? '#f59e0b' : avatarColor(user.name),
+              display:'grid', placeItems:'center', flexShrink:0,
+              fontSize:12, fontWeight:800, color:'#fff', letterSpacing:-0.5, userSelect:'none',
+            }}>
+              {getInitials(user.name)}
+            </span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{user.name}</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>{user.license}</div>
+            </div>
           </div>
           <button onClick={() => { setOpenLocal(false); onChangePin(); }} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "11px 14px", border: "none", borderBottom: "1px solid var(--border)", background: "none", cursor: "pointer", color: "var(--ink)", fontSize: 13.5, fontWeight: 500, fontFamily: "var(--sans)" }}>
             <Icon name="shield" size={16} color="var(--brand-deep)" />เปลี่ยน PIN

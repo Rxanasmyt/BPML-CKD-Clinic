@@ -43,7 +43,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
         </div>
         {rows.length ? rows.map((r) => (
           <div key={r.id} onClick={() => onOpenPatient(r.hn)} className="prow"
-            style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap: 12, padding: "13px 18px", alignItems: "center", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+            style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap: 12, padding: "13px 18px", alignItems: "center", borderBottom: "1px solid var(--border)", cursor: "pointer", borderLeft: "3px solid transparent" }}>
             <div>
               <div style={{ fontWeight: 600, color: "var(--ink)", fontSize: 14.5 }}>{r.name}</div>
               <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--ink-2)" }}>HN {r.hn} · {r.age} ปี</div>
@@ -624,7 +624,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}><Icon name="chevron" size={16} color="var(--ink-2)" />กลับ</button>
 
       {/* header */}
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "22px 24px", marginBottom: 16 }}>
+      <div className="card-modern" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "22px 24px", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
           <div style={{ width: 54, height: 54, borderRadius: 14, background: "var(--brand-soft)", display: "grid", placeItems: "center", flexShrink: 0 }}>
             <Icon name="user" size={28} color="var(--brand-deep)" />

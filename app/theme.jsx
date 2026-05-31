@@ -75,17 +75,23 @@ function Icon({ name, size = 20, color = "currentColor", stroke = 1.8 }) {
 }
 
 /* ---------- Badge ความเสี่ยง ---------- */
-function RiskBadge({ band, score, small }) {
+function RiskBadge({ band, score }) {
   const m = RISK_META[band] || RISK_META.low;
+  const isHigh = band === 'high';
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 700,
-      fontSize: small ? 11 : 12.5, color: m.color, background: m.bg,
-      border: `1px solid ${m.border}`, padding: small ? "2px 8px" : "3px 10px",
-      borderRadius: 999, whiteSpace: "nowrap",
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: 99, background: m.color }} />
-      {m.th}{score != null && <span style={{ opacity: .65, fontVariantNumeric: "tabular-nums" }}>· {score}</span>}
+    <span
+      className={isHigh ? 'risk-high-pulse' : ''}
+      style={{
+        display:'inline-flex', alignItems:'center', gap:5,
+        padding:'4px 10px', borderRadius:99,
+        background:m.bg, border:`1.5px solid ${m.border}`,
+        color:m.color, fontSize:12, fontWeight:700,
+        whiteSpace:'nowrap',
+      }}
+    >
+      {isHigh && <span style={{width:7,height:7,borderRadius:'50%',background:m.color,flexShrink:0,display:'inline-block'}}/>}
+      {m.th}
+      {score!==undefined && <span style={{fontFamily:'var(--mono)',fontSize:10.5,opacity:0.75,marginLeft:1}}>·{score}</span>}
     </span>
   );
 }

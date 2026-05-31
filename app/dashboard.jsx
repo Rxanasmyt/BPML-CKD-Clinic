@@ -429,7 +429,7 @@ function Kpi({ label, value, unit, icon, tone, sub, onClick }) {
   const tones = { danger: "#dc2626", ok: "#16a34a", warn: "#d97706" };
   const c = tones[tone] || "var(--brand)";
   return (
-    <div onClick={onClick} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 18px", cursor: onClick ? "pointer" : "default", position: "relative", overflow: "hidden" }}>
+    <div className="card-modern" onClick={onClick} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px", cursor: onClick ? "pointer" : "default", position: "relative", overflow: "hidden", borderTop: `3px solid ${c}`, transition: 'transform 0.15s' }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <span style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 500, lineHeight: 1.3, maxWidth: 130 }}>{label}</span>
         <span style={{ width: 34, height: 34, borderRadius: 9, background: tone ? c + "18" : "var(--brand-soft)", display: "grid", placeItems: "center", flexShrink: 0 }}>
@@ -447,7 +447,7 @@ function Kpi({ label, value, unit, icon, tone, sub, onClick }) {
 
 function Card({ title, icon, right, children }) {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px" }}>
+    <div className="card-modern" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
         {icon && <Icon name={icon} size={18} color="var(--brand-deep)" />}
         <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0, flex: 1 }}>{title}</h3>
