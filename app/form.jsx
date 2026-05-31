@@ -1038,7 +1038,6 @@ function MedRow({ i, m, setMed, pickDrug, del, canDel, allergyConflict }) {
         borderLeft: hasConflict ? "4px solid #dc2626" : undefined,
         borderRadius: hasConflict ? "0 0 12px 12px" : 12,
         background: "var(--surface-2)", position: "relative",
-        overflow: "hidden",
       }}>
         {/* Collapsed / header bar */}
         {!expanded ? (
@@ -1076,18 +1075,17 @@ function MedRow({ i, m, setMed, pickDrug, del, canDel, allergyConflict }) {
               <div style={{ flex: "2 1 200px", position: "relative" }}>
                 <MiniLabel>ชื่อยา / Drug</MiniLabel>
                 <input ref={drugInputRef} style={inS} value={m.drug} onChange={(e) => setMed(i, "drug", e.target.value)}
-                  onFocus={openDrop} onBlur={() => setTimeout(() => setFocus(false), 180)}
+                  onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 180)}
                   placeholder="พิมพ์ชื่อยา..." />
-                {focus && matches.length > 0 && dropPos && (
+                {focus && matches.length > 0 && (
                   <div style={{
-                    position: "fixed",
-                    top: dropPos.above ? undefined : dropPos.top,
-                    bottom: dropPos.above ? (window.innerHeight - dropPos.top) : undefined,
-                    left: dropPos.left,
-                    width: dropPos.width,
+                    position: "absolute",
+                    top: "100%", left: 0,
+                    minWidth: "100%", width: "max-content", maxWidth: 480,
                     maxHeight: 380, overflowY: "auto",
                     zIndex: 9000, background: "var(--surface)", border: "1px solid var(--border)",
                     borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,.18)",
+                    marginTop: 4,
                   }}>
                     <div style={{ padding: "8px 14px 6px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
                       <span>🔍</span>
@@ -1279,7 +1277,7 @@ function HerbOtcSection({ items, onChange }) {
           <input style={inS} value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="ค้นหาสมุนไพร, ยา OTC, อาหารเสริม..." />
           {results.length > 0 && (
-            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 40, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 9000, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>
               {results.map((h) => {
                 const ti = HERB_TYPE_INFO[h.type] || HERB_TYPE_INFO.herb;
                 const alreadyAdded = items.some((x) => x.name === h.name);
