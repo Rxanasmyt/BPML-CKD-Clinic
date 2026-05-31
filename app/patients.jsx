@@ -71,7 +71,7 @@ function PatientCard({ r, onOpen, idx }) {
               padding:"3px 8px", borderRadius:99,
               background:overdue?"#fef2f2":"#fffbeb",
               border:`1px solid ${overdue?"#fca5a5":"#fde68a"}` }}>
-              <Icon name="clock" size:11 color={overdue?"#dc2626":"#d97706"} />
+              <Icon name="clock" size={11} color={overdue?"#dc2626":"#d97706"} />
               {overdue?"เกินกำหนด ":"นัด "}{fmtDate(r.followUp.due)}
             </div>
           ) : (
@@ -950,7 +950,6 @@ function segBtn2(on, k) {
   return { padding: "9px 14px", borderRadius: 9, border: `1px solid ${on ? c : "var(--border)"}`, background: on ? c + "15" : "var(--surface)", color: on ? c : "var(--ink-2)", fontSize: 13, fontWeight: on ? 700 : 500, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" };
 }
 
-const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-function fmtDate(s) { if (!s) return "–"; const d = new Date(s); if (isNaN(d)) return s; return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`; }
+// fmtDate and TH_MONTHS defined in data.jsx
 
 Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, fmtDate });

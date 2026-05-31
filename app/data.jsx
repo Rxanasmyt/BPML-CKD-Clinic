@@ -228,7 +228,11 @@ const SEED_RECORDS = [
     interventions: ["counsel"], outcome: "accepted", pharmacist: "ภก. ธนวัฒน์ รักษ์ไต", createdBy: "u2" }),
 ];
 
+const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function fmtDate(s) { if (!s) return "–"; const d = new Date(s); if (isNaN(d)) return s; return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`; }
+
 Object.assign(window, {
   SOURCE_OPTIONS, DRP_OPTIONS, INTERVENTION_OPTIONS,
   CKD_STAGES, computeRisk, RISK_META, Store, USERS, SEED_RECORDS,
+  TH_MONTHS, fmtDate,
 });
