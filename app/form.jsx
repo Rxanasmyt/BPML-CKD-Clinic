@@ -1,6 +1,7 @@
 /* =========================================================================
    form.jsx — แบบบันทึก BPML v2
-   ใหม่: HN auto-fill, copy last visit, quick dose builder, recent drugs
+   ใหม่: HN auto-fill, copy last visit, quick dose builder, recent drugs,
+         drug-allergy cross-check, CKD-EPI 2021 eGFR, smoother med copy
    ========================================================================= */
 
 /* ---------- ยาที่ใช้บ่อย (recent drugs tracker) ---------- */
@@ -25,6 +26,133 @@ const RecentDrugs = {
     return [...recMatch, ...rest].slice(0, 8).map((n) => DRUG_DB.find((d) => d.name === n)).filter(Boolean);
   },
 };
+
+/* =========================================================================
+   Feature 1: Drug Allergy Cross-Check
+   checkAllergyConflict(drugName, allergyString) → {conflict: bool, reason: string}
+   ========================================================================= */
+function checkAllergyConflict(drugName, allergyString) {
+  if (!drugName || !allergyString) return { conflict: false, reason: "" };
+
+  const dn = drugName.toLowerCase().trim();
+
+  // tokenise allergy string by commas, slashes, spaces
+  const tokens = allergyString
+    .split(/[,\/\s]+/)
+    .map((t) => t.toLowerCase().trim())
+    .filter(Boolean);
+
+  if (!tokens.length) return { conflict: false, reason: "" };
+
+  // drug-class rules
+  const CLASS_RULES = [
+    {
+      keys: ["penicillin", "amoxicillin", "ampicillin", "piperacillin", "co-amoxiclav"],
+      matchFn: (d) => d.includes("cillin") || d.includes("co-amoxiclav"),
+      label: "Penicillin",
+    },
+    {
+      // cephalosporin cross-reactivity — triggered only by penicillin allergy token
+      keys: ["penicillin"],
+      matchFn: (d) => d.startsWith("cef") || d.startsWith("ceph"),
+      label: "Penicillin (cross-reactivity ~10% กับ Cephalosporins)",
+    },
+    {
+      keys: ["sulfa", "sulfonamide", "sulphonamide", "sulfamethoxazole", "tmp-smx", "cotrimoxazole", "bactrim"],
+      matchFn: (d) =>
+        d.includes("sulfa") || d.includes("sulfame") || d === "tmp-smx" ||
+        d === "cotrimoxazole" || d === "furosemide" || d === "hydrochlorothiazide" ||
+        d === "hctz" || d === "celecoxib" || d === "glipizide" || d === "gliclazide",
+      label: "Sulfonamide",
+    },
+    {
+      keys: ["nsaid", "aspirin", "ibuprofen", "naproxen", "diclofenac", "celecoxib", "mefenamic", "indomethacin"],
+      matchFn: (d) =>
+        ["aspirin", "ibuprofen", "naproxen", "diclofenac", "celecoxib", "mefenamic acid",
+          "mefenamic", "indomethacin", "meloxicam", "piroxicam", "ketorolac", "etoricoxib",
+          "nimesulide"].includes(d),
+      label: "NSAID/Aspirin",
+    },
+    {
+      keys: ["iodine", "iodide", "contrast", "povidone"],
+      matchFn: (d) => d.includes("iodine") || d.includes("povidone"),
+      label: "Iodine/Contrast",
+    },
+    {
+      keys: ["acei", "ace", "enalapril", "lisinopril", "ramipril", "captopril", "angioedema"],
+      matchFn: (d) => d.endsWith("pril"),
+      label: "ACE Inhibitor",
+    },
+    {
+      keys: ["statin", "simvastatin", "atorvastatin", "rosuvastatin", "pravastatin", "lovastatin", "fluvastatin", "pitavastatin"],
+      matchFn: (d) => d.endsWith("statin"),
+      label: "Statin",
+    },
+    {
+      keys: ["allopurinol"],
+      matchFn: (d) => d === "allopurinol",
+      label: "Allopurinol (HLA-B*5801 — ความเสี่ยงสูงในผู้ป่วยไทย)",
+    },
+  ];
+
+  for (const tok of tokens) {
+    // 1. class-based matching
+    for (const rule of CLASS_RULES) {
+      const keyHit = rule.keys.some((k) => tok === k || tok.includes(k) || k.includes(tok));
+      if (keyHit && rule.matchFn(dn)) {
+        return {
+          conflict: true,
+          reason: `${drugName} อาจตรงกับ allergy '${allergyString}' (กลุ่ม ${rule.label})`,
+        };
+      }
+    }
+
+    // 2. generic string overlap (token >= 4 chars to avoid false positives)
+    if (tok.length >= 4 && (dn.includes(tok) || tok.includes(dn))) {
+      return {
+        conflict: true,
+        reason: `${drugName} อาจตรงกับ allergy '${allergyString}'`,
+      };
+    }
+  }
+
+  return { conflict: false, reason: "" };
+}
+
+/* =========================================================================
+   Feature 2: CKD-EPI 2021 (race-free) equations
+   Reference: Inker et al., NEJM 2021
+   ========================================================================= */
+function calcCKDEPI2021(scr, age, sex) {
+  const s = parseFloat(scr);
+  const a = parseFloat(age);
+  if (!s || !a || s <= 0 || a <= 0) return null;
+
+  const isFemale = sex === "female";
+  const kappa = isFemale ? 0.7 : 0.9;
+  const alpha = isFemale ? -0.241 : -0.302;
+  const ratio = s / kappa;
+
+  const egfr =
+    142 *
+    Math.pow(Math.min(ratio, 1), alpha) *
+    Math.pow(Math.max(ratio, 1), -1.2) *
+    Math.pow(0.9938, a) *
+    (isFemale ? 1.012 : 1);
+
+  return Math.round(egfr * 10) / 10;
+}
+
+function ckdStageFromEgfr(egfr) {
+  const v = parseFloat(egfr);
+  if (isNaN(v) || v <= 0) return null;
+  if (v >= 90) return "G1";
+  if (v >= 60) return "G2";
+  if (v >= 45) return "G3a";
+  if (v >= 30) return "G3b";
+  if (v >= 15) return "G4";
+  return "G5";
+}
 
 /* ---------- Quick Dose Builder ---------- */
 const FREQ_OPTS = ["1x1", "1x2", "1x3", "2x1", "2x2", "stat"];
@@ -129,7 +257,7 @@ function blankMed() { return { drug: "", strength: "", dose: "", actuallyTaking:
 
 function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [f, setF] = React.useState(() => initial ? JSON.parse(JSON.stringify(initial)) : {
-    hn: "", name: "", age: "", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
+    hn: "", name: "", age: "", sex: "male", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
     bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
     meds: [blankMed()], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "",
     comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
@@ -141,9 +269,27 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
   const [openRecon, setOpenRecon] = React.useState(!!(initial?.discrepancy === "found"));
   const [openFollow, setOpenFollow] = React.useState(!!(initial?.followUp));
-  const [hnSuggest, setHnSuggest] = React.useState(null); // {rec} last visit for this HN
+  const [hnSuggest, setHnSuggest] = React.useState(null);
 
-  // HN lookup — เมื่อกรอก HN ค้นหา visit ล่าสุด
+  // Feature 2: track whether eGFR was manually overridden
+  const [egfrManual, setEgfrManual] = React.useState(false);
+  const [egfrAutoVal, setEgfrAutoVal] = React.useState(null);
+
+  // Feature 2: auto-compute eGFR with CKD-EPI 2021 whenever scr/age/sex change
+  React.useEffect(() => {
+    if (egfrManual) return;
+    const computed = calcCKDEPI2021(f.scr, f.age, f.sex);
+    if (computed !== null) {
+      setEgfrAutoVal(computed);
+      setF((p) => ({ ...p, egfr: String(computed) }));
+    }
+  }, [f.scr, f.age, f.sex, egfrManual]);
+
+  // Feature 3: copy meds modal state
+  const [copyModalVisit, setCopyModalVisit] = React.useState(null);
+  const [copySelection, setCopySelection] = React.useState({});
+
+  // HN lookup
   function onHnChange(hn) {
     set("hn", hn);
     if (hn.trim().length >= 4) {
@@ -153,7 +299,6 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     } else { setHnSuggest(null); }
   }
 
-  // เติมข้อมูลผู้ป่วยจาก visit ล่าสุด
   function fillFromPrev() {
     if (!hnSuggest) return;
     setF((p) => ({ ...p,
@@ -166,23 +311,34 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     setHnSuggest(null);
   }
 
-  // Visit picker state
+  // Feature 3: open copy modal
+  function openCopyModal(visit) {
+    const meds = visit.meds || [];
+    const sel = {};
+    meds.forEach((_, idx) => { sel[idx] = true; });
+    setCopyModalVisit(visit);
+    setCopySelection(sel);
+  }
+
+  function applyCopySelection() {
+    if (!copyModalVisit) return;
+    const meds = (copyModalVisit.meds || []).filter((_, idx) => copySelection[idx]);
+    if (meds.length) setF((p) => ({ ...p, meds: meds.map((m) => ({ ...m })) }));
+    setCopyModalVisit(null);
+  }
+
   const [showVisitPicker, setShowVisitPicker] = React.useState(false);
   const prevVisits = React.useMemo(() => records
     .filter((r) => r.hn === f.hn.trim() && r.id !== initial?.id && (r.meds?.length > 0 || r.ckdStage))
     .sort((a, b) => (b.date || "").localeCompare(a.date || "")), [records, f.hn, initial]);
 
-  function copyFromVisit(r) {
-    if (r.meds?.length) setF((p) => ({ ...p, meds: r.meds.map((m) => ({ ...m })) }));
-    setShowVisitPicker(false);
-  }
+  function copyFromVisit(r) { openCopyModal(r); setShowVisitPicker(false); }
   function fillPatientFromVisit(r) {
     setF((p) => ({ ...p, name: r.name || p.name, age: r.age || p.age, ckdStage: r.ckdStage || p.ckdStage, allergy: r.allergy || p.allergy, physician: r.physician || p.physician }));
   }
 
   const risk = computeRisk(f);
 
-  // med ops
   const setMed = (i, k, v) => setF((p) => { const m = [...p.meds]; m[i] = { ...m[i], [k]: v }; return { ...p, meds: m }; });
   const pickDrug = (i, d) => {
     RecentDrugs.record(d.name);
@@ -195,6 +351,19 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const addMed = () => setF((p) => ({ ...p, meds: [...p.meds, blankMed()] }));
   const delMed = (i) => setF((p) => ({ ...p, meds: p.meds.filter((_, j) => j !== i) }));
 
+  // Feature 1: allergy conflicts per med row
+  const allergyConflicts = React.useMemo(() =>
+    f.meds.map((m) => m.drug ? checkAllergyConflict(m.drug, f.allergy) : { conflict: false, reason: "" }),
+    [f.meds, f.allergy]
+  );
+  const hasAnyConflict = allergyConflicts.some((c) => c.conflict);
+
+  // Feature 2: suggested CKD stage from computed eGFR
+  const suggestedStage = React.useMemo(() => {
+    if (!egfrManual && egfrAutoVal !== null) return ckdStageFromEgfr(egfrAutoVal);
+    return ckdStageFromEgfr(f.egfr);
+  }, [egfrAutoVal, egfrManual, f.egfr]);
+
   function save() {
     const rec = { ...f, riskScore: risk.score, riskBand: risk.band };
     if (!rec.createdBy) rec.createdBy = user.id;
@@ -206,6 +375,67 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
   return (
     <div style={{ paddingBottom: 96 }}>
+
+      {/* Feature 3: Copy Meds Modal */}
+      {copyModalVisit && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.45)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setCopyModalVisit(null); }}
+        >
+          <div style={{ background: "var(--surface)", borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,.25)", width: "min(560px, 96vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>📋</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)" }}>เลือกยาที่ต้องการคัดลอก</div>
+                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>จาก visit {fmtDate(copyModalVisit.date)} · {(copyModalVisit.meds || []).length} รายการ</div>
+              </div>
+              <button type="button" onClick={() => setCopyModalVisit(null)} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><Icon name="x" size={18} color="var(--ink-2)" /></button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: "12px 20px" }}>
+              {/* select-all row */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0 10px", borderBottom: "1px solid var(--border)", marginBottom: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--ink-2)" }}>
+                <CheckBox
+                  on={Object.values(copySelection).length > 0 && Object.values(copySelection).every(Boolean)}
+                  onClick={() => {
+                    const allOn = Object.values(copySelection).every(Boolean);
+                    const next = {};
+                    (copyModalVisit.meds || []).forEach((_, idx) => { next[idx] = !allOn; });
+                    setCopySelection(next);
+                  }}
+                />
+                เลือกทั้งหมด
+              </label>
+              {(copyModalVisit.meds || []).map((m, idx) => {
+                const ac = checkAllergyConflict(m.drug, f.allergy);
+                return (
+                  <label key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px", borderRadius: 9, marginBottom: 6, cursor: "pointer", background: ac.conflict ? "#fff5f5" : "var(--surface-2)", border: `1px solid ${ac.conflict ? "#fca5a5" : "var(--border)"}` }}>
+                    <CheckBox on={!!copySelection[idx]} onClick={() => setCopySelection((p) => ({ ...p, [idx]: !p[idx] }))} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink)" }}>{m.drug || "–"}</span>
+                        {m.strength && <span style={{ fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>{m.strength}</span>}
+                        {m.dose && <span style={{ fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>{m.dose}</span>}
+                        {(m.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}
+                      </div>
+                      {ac.conflict && (
+                        <div style={{ fontSize: 11.5, color: "#b91c1c", marginTop: 4, fontWeight: 600 }}>⚠️ {ac.reason}</div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setCopyModalVisit(null)} style={ghostBtn}>ยกเลิก</button>
+              <button type="button" onClick={applyCopySelection}
+                style={{ ...ghostBtn, background: "var(--brand)", color: "#fff", border: "none", fontWeight: 700 }}>
+                📋 คัดลอกที่เลือก ({Object.values(copySelection).filter(Boolean).length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1080, margin: "0 auto" }}>
         <PageHead
           title={initial ? "แก้ไขแบบบันทึก BPML" : "แบบบันทึก BPML ใหม่"}
@@ -231,6 +461,13 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
               <span style={{ flex: 1, fontSize: 13.5, color: "var(--ink)" }}>
                 พบผู้ป่วย: <strong>{hnSuggest.name}</strong> · CKD {hnSuggest.ckdStage} · visit ล่าสุด {fmtDate(hnSuggest.date)}
               </span>
+              {/* Feature 3: prominent copy button directly in banner */}
+              {(hnSuggest.meds || []).length > 0 && (
+                <button type="button" onClick={() => openCopyModal(hnSuggest)}
+                  style={{ ...ghostBtn, background: "#fff7ed", color: "#92400e", borderColor: "#f59e0b", fontWeight: 700, fontSize: 13 }}>
+                  📋 คัดลอกยาครั้งก่อน
+                </button>
+              )}
               <button type="button" onClick={fillFromPrev} style={{ ...ghostBtn, background: "var(--brand)", color: "#fff", border: "none", fontSize: 13 }}>
                 <Icon name="check" size={14} color="#fff" />เติมข้อมูล
               </button>
@@ -250,11 +487,54 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           </div>
           <div style={{ ...fGrid, marginTop: 12 }}>
             <Field label="วันที่" en="Date" w={150}><input type="date" style={inS} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
-            <Field label="Scr" unit="mg/dL" w={100}><input style={inS} value={f.scr} onChange={(e) => set("scr", e.target.value)} inputMode="decimal" /></Field>
-            <Field label="eGFR" unit="mL/min" w={110}>
-              <input style={{ ...inS, borderColor: f.egfr && Number(f.egfr) < 30 ? "#fca5a5" : undefined }} value={f.egfr} onChange={(e) => set("egfr", e.target.value)} inputMode="decimal" />
+
+            {/* Feature 2: Sex selector stored in f.sex */}
+            <div style={{ flex: "0 0 auto" }}>
+              <MiniLabel>เพศ · Sex</MiniLabel>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[["male", "ชาย"], ["female", "หญิง"]].map(([v, t]) => (
+                  <button key={v} type="button"
+                    onClick={() => { set("sex", v); setEgfrManual(false); }}
+                    style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${f.sex === v ? "var(--brand)" : "var(--border)"}`, background: f.sex === v ? "var(--brand)" : "var(--surface)", color: f.sex === v ? "#fff" : "var(--ink-2)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Field label="Scr" unit="mg/dL" w={100}>
+              <input style={inS} value={f.scr}
+                onChange={(e) => { set("scr", e.target.value); setEgfrManual(false); }}
+                inputMode="decimal" />
             </Field>
-            <RenalDoseCalc age={f.age} scr={f.scr} onFill={(v) => set("egfr", v)} />
+
+            {/* Feature 2: eGFR with CKD-EPI 2021 badge */}
+            <div style={{ flex: "0 0 150px" }}>
+              <MiniLabel>eGFR <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>(mL/min)</span></MiniLabel>
+              <input
+                style={{ ...inS, borderColor: f.egfr && Number(f.egfr) < 30 ? "#fca5a5" : undefined }}
+                value={f.egfr}
+                onChange={(e) => { set("egfr", e.target.value); setEgfrManual(true); }}
+                inputMode="decimal"
+              />
+              {f.egfr && !egfrManual && (
+                <div style={{ marginTop: 4, fontSize: 11, color: "var(--brand-deep)", fontWeight: 600, lineHeight: 1.4 }}>
+                  คำนวณจาก CKD-EPI 2021 ✓
+                  {suggestedStage && <span style={{ marginLeft: 6, color: "var(--ink-2)", fontWeight: 400 }}>→ {suggestedStage}</span>}
+                </div>
+              )}
+              {f.egfr && egfrManual && (
+                <div style={{ marginTop: 4, fontSize: 11, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 4 }}>
+                  กรอกเอง
+                  <button type="button" onClick={() => setEgfrManual(false)}
+                    style={{ fontSize: 10, border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px", background: "var(--surface)", cursor: "pointer", color: "var(--brand-deep)" }}>
+                    คำนวณใหม่
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <RenalDoseCalc age={f.age} scr={f.scr} sex={f.sex} onFill={(v) => { set("egfr", v); setEgfrManual(true); }} />
             <Field label="K⁺" unit="mmol/L" w={100}><input style={{ ...inS, borderColor: f.k && (Number(f.k) > 5.5 || Number(f.k) < 3.5) ? "#fca5a5" : undefined }} value={f.k} onChange={(e) => set("k", e.target.value)} inputMode="decimal" /></Field>
             <Field label="Na⁺" unit="mmol/L" w={100}><input style={inS} value={f.na} onChange={(e) => set("na", e.target.value)} inputMode="decimal" /></Field>
             <Field label="BP" unit="mmHg" w={130}>
@@ -272,6 +552,16 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         {/* ส่วนที่ 3 — BPML */}
         <FSection n="3" title="รายการยาที่ถูกต้องและเป็นปัจจุบันที่สุด" en="Best Possible Medication List" defaultOpen
           badge={f.meds.filter((m) => m.drug).length + " รายการ"}>
+
+          {/* Feature 1: global allergy warning at top of med section */}
+          {hasAnyConflict && (
+            <div style={{ marginBottom: 12, padding: "11px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>⚠️</span>
+              <span style={{ fontSize: 13.5, fontWeight: 700, color: "#b91c1c", flex: 1 }}>
+                พบยาในรายการที่อาจตรงกับ Allergy ที่บันทึกไว้ — กรุณาตรวจสอบก่อนจ่ายยา
+              </span>
+            </div>
+          )}
 
           {/* Visit picker */}
           {prevVisits.length > 0 && (
@@ -311,9 +601,10 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
                             style={{ ...ghostBtn, fontSize: 12, padding: "6px 10px" }}>
                             <Icon name="user" size={13} />ข้อมูลผู้ป่วย
                           </button>
+                          {/* Feature 3: opens checkbox modal instead of immediate copy */}
                           <button type="button" onClick={() => copyFromVisit(r)}
                             style={{ ...ghostBtn, fontSize: 12, padding: "6px 10px", color: "var(--brand-deep)", borderColor: "var(--brand)" }}>
-                            <Icon name="pill" size={13} />นำรายการยา
+                            <Icon name="pill" size={13} />📋 เลือกยา
                           </button>
                         </div>
                       </div>
@@ -325,7 +616,13 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {f.meds.map((m, i) => <MedRow key={i} i={i} m={m} setMed={setMed} pickDrug={pickDrug} del={() => delMed(i)} canDel={f.meds.length > 1} />)}
+            {f.meds.map((m, i) => (
+              <MedRow
+                key={i} i={i} m={m} setMed={setMed} pickDrug={pickDrug}
+                del={() => delMed(i)} canDel={f.meds.length > 1}
+                allergyConflict={allergyConflicts[i]}
+              />
+            ))}
           </div>
           <button type="button" onClick={addMed} style={{ ...ghostBtn, marginTop: 12, borderStyle: "dashed", width: "100%", justifyContent: "center" }}>
             <Icon name="plus" size={16} /> เพิ่มรายการยา
@@ -429,7 +726,6 @@ function StrengthPicker({ drug, value, onChange }) {
   const options = info ? info.strengths : [];
   const [custom, setCustom] = React.useState(false);
 
-  // If no options or user wants custom input
   if (!options.length || custom) {
     return (
       <div style={{ display: "flex", gap: 4 }}>
@@ -455,7 +751,7 @@ function StrengthPicker({ drug, value, onChange }) {
   );
 }
 
-/* ---------- Drug info card (แสดงข้อมูลยาสำหรับ CKD) ---------- */
+/* ---------- Drug info card ---------- */
 function DrugInfoCard({ drug }) {
   const info = lookupDrug(drug);
   if (!info || !info.note) return null;
@@ -474,66 +770,82 @@ function DrugInfoCard({ drug }) {
 }
 
 /* ---------- Med row + autosuggest + dose builder ---------- */
-function MedRow({ i, m, setMed, pickDrug, del, canDel }) {
+function MedRow({ i, m, setMed, pickDrug, del, canDel, allergyConflict }) {
   const [focus, setFocus] = React.useState(false);
   const matches = focus && m.drug.trim().length >= 1
     ? RecentDrugs.sorted(m.drug.trim())
     : (focus ? RecentDrugs.sorted("") : []);
 
+  const hasConflict = allergyConflict && allergyConflict.conflict;
+
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: "var(--surface-2)", position: "relative" }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <span style={{ width: 24, height: 24, borderRadius: 7, background: "var(--brand)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 22 }}>{i + 1}</span>
-
-        <div style={{ flex: "2 1 200px", position: "relative" }}>
-          <MiniLabel>ชื่อยา / Drug</MiniLabel>
-          <input style={inS} value={m.drug} onChange={(e) => setMed(i, "drug", e.target.value)}
-            onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 160)}
-            placeholder="พิมพ์ชื่อยา หรือ HN ค้นหา..." />
-          {matches.length > 0 && (
-            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>
-              {!m.drug.trim() && <div style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)" }}>ยาที่ใช้บ่อย</div>}
-              {matches.map((d) => (
-                <div key={d.name} onMouseDown={() => pickDrug(i, d)} className="acrow"
-                  style={{ padding: "9px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</span>
-                      <span style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{d.cls}</span>
-                    </div>
-                    {d.note && <div style={{ fontSize: 11, color: d.flags.includes("contra") || d.flags.includes("nephrotoxic") ? "#b91c1c" : "var(--ink-2)", marginTop: 2, lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.note}</div>}
-                  </div>
-                  <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>{(d.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ flex: "0 0 130px" }}>
-          <MiniLabel>ความแรง</MiniLabel>
-          <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
-        </div>
-
-        <div style={{ flex: "1.8 1 160px" }}>
-          <MiniLabel>ขนาด/วิธีใช้</MiniLabel>
-          <DoseBuilder value={m.dose} onChange={(v) => setMed(i, "dose", v)} />
-        </div>
-
-        <div style={{ flex: "1.4 1 120px" }}>
-          <MiniLabel>ผู้ป่วยกินจริง</MiniLabel>
-          <input style={inS} value={m.actuallyTaking} onChange={(e) => setMed(i, "actuallyTaking", e.target.value)} placeholder="ตามสั่ง / ระบุ" />
-        </div>
-
-        {canDel && <button type="button" onClick={del} title="ลบ" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, marginTop: 20 }}><Icon name="x" size={18} /></button>}
-      </div>
-
-      {m.flags && m.flags.length > 0 && (
-        <div style={{ display: "flex", gap: 6, marginTop: 8, marginLeft: 34, flexWrap: "wrap" }}>
-          {m.flags.map((fl) => <FlagTag key={fl} fl={fl} />)}
+    <div>
+      {/* Feature 1: per-row allergy warning banner above the row */}
+      {hasConflict && (
+        <div style={{ padding: "8px 12px 8px 16px", background: "#fef2f2", border: "1px solid #fca5a5", borderBottom: "none", borderRadius: "10px 10px 0 0", fontSize: 12.5, fontWeight: 600, color: "#b91c1c", display: "flex", alignItems: "center", gap: 7 }}>
+          ⚠️ แพ้ยา: {allergyConflict.reason}
         </div>
       )}
-      {m.drug && <DrugInfoCard drug={m.drug} />}
+      <div style={{
+        border: `1px solid ${hasConflict ? "#fca5a5" : "var(--border)"}`,
+        borderTop: hasConflict ? "none" : undefined,
+        borderLeft: hasConflict ? "4px solid #dc2626" : undefined,
+        borderRadius: hasConflict ? "0 0 12px 12px" : 12,
+        padding: 12, background: "var(--surface-2)", position: "relative",
+      }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <span style={{ width: 24, height: 24, borderRadius: 7, background: "var(--brand)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 22 }}>{i + 1}</span>
+
+          <div style={{ flex: "2 1 200px", position: "relative" }}>
+            <MiniLabel>ชื่อยา / Drug</MiniLabel>
+            <input style={inS} value={m.drug} onChange={(e) => setMed(i, "drug", e.target.value)}
+              onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 160)}
+              placeholder="พิมพ์ชื่อยา หรือ HN ค้นหา..." />
+            {matches.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, marginTop: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", overflow: "hidden" }}>
+                {!m.drug.trim() && <div style={{ padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)" }}>ยาที่ใช้บ่อย</div>}
+                {matches.map((d) => (
+                  <div key={d.name} onMouseDown={() => pickDrug(i, d)} className="acrow"
+                    style={{ padding: "9px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</span>
+                        <span style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{d.cls}</span>
+                      </div>
+                      {d.note && <div style={{ fontSize: 11, color: d.flags.includes("contra") || d.flags.includes("nephrotoxic") ? "#b91c1c" : "var(--ink-2)", marginTop: 2, lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.note}</div>}
+                    </div>
+                    <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>{(d.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ flex: "0 0 130px" }}>
+            <MiniLabel>ความแรง</MiniLabel>
+            <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
+          </div>
+
+          <div style={{ flex: "1.8 1 160px" }}>
+            <MiniLabel>ขนาด/วิธีใช้</MiniLabel>
+            <DoseBuilder value={m.dose} onChange={(v) => setMed(i, "dose", v)} />
+          </div>
+
+          <div style={{ flex: "1.4 1 120px" }}>
+            <MiniLabel>ผู้ป่วยกินจริง</MiniLabel>
+            <input style={inS} value={m.actuallyTaking} onChange={(e) => setMed(i, "actuallyTaking", e.target.value)} placeholder="ตามสั่ง / ระบุ" />
+          </div>
+
+          {canDel && <button type="button" onClick={del} title="ลบ" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, marginTop: 20 }}><Icon name="x" size={18} /></button>}
+        </div>
+
+        {m.flags && m.flags.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8, marginLeft: 34, flexWrap: "wrap" }}>
+            {m.flags.map((fl) => <FlagTag key={fl} fl={fl} />)}
+          </div>
+        )}
+        {m.drug && <DrugInfoCard drug={m.drug} />}
+      </div>
     </div>
   );
 }
@@ -788,56 +1100,54 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, onApplyDrps }) {
   );
 }
 
-/* ---------- RenalDoseCalc ---------- */
-function RenalDoseCalc({ age, scr, onFill }) {
+/* ---------- RenalDoseCalc — upgraded to CKD-EPI 2021 ---------- */
+function RenalDoseCalc({ age, scr, sex, onFill }) {
   const [open, setOpen] = React.useState(false);
   const [calcAge, setCalcAge] = React.useState(age || "");
-  const [weight, setWeight] = React.useState("");
   const [calcScr, setCalcScr] = React.useState(scr || "");
-  const [sex, setSex] = React.useState("male");
+  const [calcSex, setCalcSex] = React.useState(sex || "male");
+  const [weight, setWeight] = React.useState(""); // optional for C-G comparison
 
   React.useEffect(() => { if (age) setCalcAge(age); }, [age]);
   React.useEffect(() => { if (scr) setCalcScr(scr); }, [scr]);
+  React.useEffect(() => { if (sex) setCalcSex(sex); }, [sex]);
 
-  const result = React.useMemo(() => {
+  // CKD-EPI 2021
+  const ckdepiResult = React.useMemo(() => {
+    const v = calcCKDEPI2021(calcScr, calcAge, calcSex);
+    if (v === null) return null;
+    return { egfr: v, stage: ckdStageFromEgfr(v) };
+  }, [calcAge, calcScr, calcSex]);
+
+  // Cockcroft-Gault (optional, needs weight)
+  const cgResult = React.useMemo(() => {
     const a = parseFloat(calcAge), w = parseFloat(weight), s = parseFloat(calcScr);
     if (!a || !w || !s || s <= 0) return null;
-    const sf = sex === "female" ? 0.85 : 1.0;
-    const crcl = ((140 - a) * w * sf) / (72 * s);
-    let stage = "G5";
-    if (crcl >= 90) stage = "G1";
-    else if (crcl >= 60) stage = "G2";
-    else if (crcl >= 45) stage = "G3a";
-    else if (crcl >= 30) stage = "G3b";
-    else if (crcl >= 15) stage = "G4";
-    return { crcl: Math.round(crcl * 10) / 10, stage };
-  }, [calcAge, weight, calcScr, sex]);
+    const sf = calcSex === "female" ? 0.85 : 1.0;
+    return { crcl: Math.round(((140 - a) * w * sf) / (72 * s) * 10) / 10 };
+  }, [calcAge, weight, calcScr, calcSex]);
 
   if (!open) {
     return (
       <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 1 }}>
         <button type="button" onClick={() => setOpen(true)}
           style={{ ...ghostBtn, fontSize: 12, padding: "7px 11px", color: "var(--brand-deep)", borderColor: "var(--brand)", whiteSpace: "nowrap" }}>
-          <Icon name="pill" size={13} />คำนวณ CrCl (C-G)
+          <Icon name="pill" size={13} />คำนวณ eGFR
         </button>
       </div>
     );
   }
 
   return (
-    <div style={{ border: "1px solid var(--brand)", borderRadius: 12, padding: 14, background: "var(--brand-soft)", flex: "1 1 280px" }}>
+    <div style={{ border: "1px solid var(--brand)", borderRadius: 12, padding: 14, background: "var(--brand-soft)", flex: "1 1 300px" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--brand-deep)", flex: 1 }}>คำนวณ CrCl (Cockcroft-Gault)</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--brand-deep)", flex: 1 }}>คำนวณ eGFR (CKD-EPI 2021)</span>
         <button type="button" onClick={() => setOpen(false)} style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }}><Icon name="x" size={15} color="var(--ink-2)" /></button>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
         <div style={{ flex: "1 1 70px" }}>
           <MiniLabel>อายุ (ปี)</MiniLabel>
           <input style={inS} value={calcAge} onChange={(e) => setCalcAge(e.target.value)} inputMode="numeric" placeholder="ปี" />
-        </div>
-        <div style={{ flex: "1 1 70px" }}>
-          <MiniLabel>น้ำหนัก (kg)</MiniLabel>
-          <input style={inS} value={weight} onChange={(e) => setWeight(e.target.value)} inputMode="decimal" placeholder="kg" />
         </div>
         <div style={{ flex: "1 1 80px" }}>
           <MiniLabel>Scr (mg/dL)</MiniLabel>
@@ -847,25 +1157,38 @@ function RenalDoseCalc({ age, scr, onFill }) {
           <MiniLabel>เพศ</MiniLabel>
           <div style={{ display: "flex", gap: 4 }}>
             {[["male", "ชาย"], ["female", "หญิง"]].map(([v, t]) => (
-              <button key={v} type="button" onClick={() => setSex(v)}
-                style={{ padding: "8px 10px", borderRadius: 7, border: `1px solid ${sex === v ? "var(--brand)" : "var(--border)"}`, background: sex === v ? "var(--brand)" : "var(--surface)", color: sex === v ? "#fff" : "var(--ink-2)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{t}</button>
+              <button key={v} type="button" onClick={() => setCalcSex(v)}
+                style={{ padding: "8px 10px", borderRadius: 7, border: `1px solid ${calcSex === v ? "var(--brand)" : "var(--border)"}`, background: calcSex === v ? "var(--brand)" : "var(--surface)", color: calcSex === v ? "#fff" : "var(--ink-2)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{t}</button>
             ))}
           </div>
         </div>
+        <div style={{ flex: "1 1 80px" }}>
+          <MiniLabel>น้ำหนัก (kg) <span style={{ fontWeight: 400, color: "var(--ink-2)", fontSize: 10 }}>C-G only</span></MiniLabel>
+          <input style={inS} value={weight} onChange={(e) => setWeight(e.target.value)} inputMode="decimal" placeholder="ไม่จำเป็น" />
+        </div>
       </div>
-      {result ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface)", borderRadius: 9, border: "1px solid var(--border)" }}>
-          <div style={{ flex: 1 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: "var(--brand-deep)", fontFamily: "var(--mono)" }}>{result.crcl} mL/min</span>
-            <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>→ CKD {result.stage}</span>
+
+      {ckdepiResult ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface)", borderRadius: 9, border: "1px solid var(--brand)" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--brand-deep)", textTransform: "uppercase", letterSpacing: .4, marginBottom: 2 }}>CKD-EPI 2021</div>
+              <span style={{ fontSize: 15, fontWeight: 800, color: "var(--brand-deep)", fontFamily: "var(--mono)" }}>{ckdepiResult.egfr} mL/min/1.73m²</span>
+              <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>→ CKD {ckdepiResult.stage}</span>
+            </div>
+            <button type="button" onClick={() => { onFill(String(ckdepiResult.egfr)); setOpen(false); }}
+              style={{ ...ghostBtn, color: "var(--brand-deep)", borderColor: "var(--brand)", fontSize: 12.5, padding: "7px 12px" }}>
+              ใส่ค่า eGFR
+            </button>
           </div>
-          <button type="button" onClick={() => { onFill(String(result.crcl)); setOpen(false); }}
-            style={{ ...ghostBtn, color: "var(--brand-deep)", borderColor: "var(--brand)", fontSize: 12.5, padding: "7px 12px" }}>
-            ใส่ค่า eGFR
-          </button>
+          {cgResult && (
+            <div style={{ padding: "8px 12px", background: "var(--surface)", borderRadius: 9, border: "1px solid var(--border)", fontSize: 12, color: "var(--ink-2)" }}>
+              Cockcroft-Gault (CrCl): <span style={{ fontWeight: 700, fontFamily: "var(--mono)", color: "var(--ink)" }}>{cgResult.crcl} mL/min</span>
+            </div>
+          )}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "var(--ink-2)", padding: "8px 0" }}>กรอกข้อมูลให้ครบเพื่อคำนวณ</div>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", padding: "8px 0" }}>กรอก Scr, อายุ และเพศเพื่อคำนวณ CKD-EPI 2021</div>
       )}
     </div>
   );
