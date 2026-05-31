@@ -82,7 +82,7 @@ function App() {
   React.useEffect(() => { window.showToast = showToast; }, [showToast]);
 
   const [user, setUser] = React.useState(() => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; } });
-  const [records, setRecords] = React.useState([]);
+  const [records, setRecords] = React.useState(() => Store.all());
   const [route, setRoute] = React.useState({ view: "dashboard" });
 
   /* --- PWA install banner --- */
@@ -233,12 +233,7 @@ function App() {
 
       <main style={{ flex: 1, minWidth: 0 }}>
         <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />
-        {syncState === "connecting" && records.length === 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16, color: "var(--ink-2)" }}>
-            <div style={{ width: 40, height: 40, border: "3.5px solid var(--border)", borderTopColor: "var(--brand)", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-            <span style={{ fontSize: 15 }}>กำลังเชื่อมต่อ Firebase...</span>
-          </div>
-        ) : <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>}
+        <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
       </main>
       {themePanel}
       {installBanner && (
