@@ -1160,7 +1160,7 @@ function FSection({ n, title, en, badge, badgeTone, defaultOpen, lockOpen, open,
   const isOpen = open != null ? open : localOpen;
   const tgl = () => { if (lockOpen) return; if (onToggle) onToggle(); else setLocalOpen((o) => !o); };
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 14, background: "var(--surface)", marginBottom: 14, overflow: "hidden" }}>
+    <div style={{ border: "1px solid var(--border)", borderRadius: 14, background: "var(--surface)", marginBottom: 14 }}>
       <button type="button" onClick={tgl} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", background: "none", border: "none", cursor: lockOpen ? "default" : "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
         <span style={{ width: 26, height: 26, borderRadius: 8, background: "var(--brand-soft)", color: "var(--brand-deep)", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{n}</span>
         <span style={{ flex: 1 }}>
