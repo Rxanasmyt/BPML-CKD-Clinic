@@ -197,6 +197,18 @@ const DDI_RULES = [
     rec:"ห้ามใช้ร่วมกัน; เปลี่ยนเป็น fenofibrate (ปลอดภัยกว่ากับ statin)", drpKey:DRPK.ddi,
   },
   {
+    id:"statin-fenofibrate", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"statin")||dm(a,"simvastatin")||dm(a,"atorvastatin")||dm(a,"rosuvastatin")||dm(a,"pravastatin")) && dm(b,"fenofibrate"),
+    msg:"Statin + Fenofibrate — เพิ่มความเสี่ยง myopathy/rhabdomyolysis (น้อยกว่า gemfibrozil)",
+    rec:"ติดตาม CK และอาการปวดกล้ามเนื้อ; ระวังใน CKD (fenofibrate สะสม); หลีกเลี่ยง eGFR<30", drpKey:DRPK.ddi,
+  },
+  {
+    id:"metformin-contrast", sev:SEV.HIGH,
+    match:(a,b)=>dm(a,"metformin") && (dm(b,"contrast")||dm(b,"iodinated")||dm(b,"สารทึบรังสี")||dm(b,"iohexol")||dm(b,"iodixanol")),
+    msg:"⚠️ Metformin + Iodinated contrast — เสี่ยง contrast-induced AKI → lactic acidosis",
+    rec:"หยุด Metformin ก่อนฉีดสารทึบรังสี 48 ชม.; ตรวจ Scr ก่อนเริ่มยาใหม่; ให้ hydration", drpKey:DRPK.nephrotoxic,
+  },
+  {
     id:"simva-amio", sev:SEV.HIGH,
     match:(a,b)=>dm(a,"simvastatin") && dm(b,"amiodarone"),
     msg:"⚠️ Simvastatin + Amiodarone — ↑ Simvastatin level; เสี่ยง myopathy/rhabdomyolysis",
@@ -355,7 +367,7 @@ const EGFR_RULES = [
 ];
 
 /* ---------- ฟังก์ชันวิเคราะห์หลัก ---------- */
-function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage }) {
+function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm: hasDM }) {
   const allDrugs = [
     ...meds.map((m) => ({ name: m.drug, source: "med" })),
     ...otcItems.map((o) => ({ name: o.name, source: "otc" })),
@@ -516,6 +528,79 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage }) {
     addFinding({ sev:SEV.LOW, msg:"ไม่มียา renoprotective (ACEI/ARB/SGLT2i) ในรายการยา — ควรประเมินความจำเป็น", rec:"พิจารณา ACEI หรือ ARB หรือ SGLT2i ตาม guideline (KDIGO 2024) ถ้าไม่มีข้อห้าม", drpKey:DRPK.omission, drugs:[], id:"missing_renoprot" });
   }
 
+  // ---------- helper predicates (drug presence by class) ----------
+  const hasDrug = (...pats) => allDrugs.some((d) => pats.some((p) => dm(d.name, p)));
+  const hasACEIARB = () => hasDrug("acei","arb","enalapril","lisinopril","ramipril","captopril","perindopril","imidapril","losartan","valsartan","candesartan","irbesartan","telmisartan","olmesartan");
+  const hasKsparing = () => hasDrug("spironolactone","eplerenone","amiloride","k-sparing");
+  const hasESAorIron = () => hasDrug("esa","epoetin","darbepoetin","methoxy polyethylene","iron","ferrous","ferric","ธาตุเหล็ก");
+  const hasBicarb = () => hasDrug("sodium bicarbonate","ไบคาร์บ","nahco3","alkali");
+  const hasBinder = () => hasDrug("phosphate binder","calcium carbonate","sevelamer","lanthanum","binder");
+  const hasAntiHTN = () => hasDrug("acei","arb","ccb","amlodipine","felodipine","nifedipine","diltiazem","verapamil","beta-blocker","metoprolol","carvedilol","atenolol","bisoprolol","nebivolol","enalapril","losartan","valsartan","candesartan","furosemide","hydrochlorothiazide","indapamide","doxazosin","hydralazine","clonidine");
+  const hasSGLT2drug = () => hasDrug("sglt2","dapagliflozin","empagliflozin","canagliflozin");
+
+  // ---------- 6. Lab-triggered alerts ----------
+  const hbV = parseFloat(hb), hco3V = parseFloat(hco3), phosV = parseFloat(phos), caV = parseFloat(ca);
+  const sbpV = parseFloat(bpSys), dbpV = parseFloat(bpDia), uacrV = parseFloat(uacr);
+
+  // Anemia of CKD: Hb < 10 และยังไม่ได้รักษา (ESA/Iron)
+  if (!isNaN(hbV) && hbV < 10 && !hasESAorIron()) {
+    addFinding({ sev: hbV < 9 ? SEV.HIGH : SEV.MED,
+      msg:`Hb=${hb} g/dL (<10) — อาจเป็น anemia of CKD ที่ยังไม่ได้รักษา`,
+      rec:"ประเมิน iron studies (ferritin, TSAT); พิจารณา iron supplement และ/หรือ ESA ตาม KDIGO; ปรึกษาแพทย์",
+      drpKey:DRPK.omission, drugs:[], id:"lab_anemia" });
+  }
+  // Hyperkalemia: K > 5.5 ร่วมยาเพิ่ม K
+  if (!isNaN(kVal) && kVal > 5.5 && (hasACEIARB() || hasKsparing())) {
+    addFinding({ sev:SEV.HIGH,
+      msg:`⚠️ K⁺=${k} mmol/L (>5.5) ร่วมกับยาเพิ่มโพแทสเซียม (ACEI/ARB/K-sparing) — hyperkalemia เสี่ยงสูง`,
+      rec:"ทบทวน/หยุดยาที่เพิ่ม K⁺; พิจารณา K-binder; ตรวจ ECG; ติดตาม K⁺ ใกล้ชิด; ปรึกษาแพทย์ด่วน",
+      drpKey:DRPK.electrolyte, drugs:[], id:"lab_hyperk" });
+  }
+  // Metabolic acidosis: HCO3 < 22 และไม่มี alkali
+  if (!isNaN(hco3V) && hco3V < 22 && !hasBicarb()) {
+    addFinding({ sev: hco3V < 18 ? SEV.HIGH : SEV.MED,
+      msg:`HCO₃⁻=${hco3} mEq/L (<22) — metabolic acidosis ที่ยังไม่ได้รักษา`,
+      rec:"พิจารณา Sodium bicarbonate เพื่อคุม HCO₃⁻ 22-24 (KDIGO); ชะลอ CKD progression; ปรึกษาแพทย์",
+      drpKey:DRPK.omission, drugs:[], id:"lab_acidosis" });
+  }
+  // Hyperphosphatemia: PO4 > 1.78 mmol/L (≈5.5 mg/dL) และไม่มี binder
+  if (!isNaN(phosV) && phosV > 1.78 && !hasBinder()) {
+    addFinding({ sev:SEV.MED,
+      msg:`Phosphate=${phos} mmol/L (>1.78) — hyperphosphatemia ที่ยังไม่ได้รักษา`,
+      rec:"แนะนำจำกัด phosphate ในอาหาร; พิจารณา phosphate binder (กินพร้อมอาหาร); ปรึกษาแพทย์",
+      drpKey:DRPK.omission, drugs:[], id:"lab_phosphate" });
+  }
+  // Hypercalcemia + Ca-based binder/active Vit D
+  if (!isNaN(caV) && caV > 2.6 && hasDrug("calcium carbonate","calcitriol","alfacalcidol","paricalcitol")) {
+    addFinding({ sev:SEV.MED,
+      msg:`Ca=${ca} mmol/L (สูง) ร่วมกับ Ca-based binder / active Vit D — เสี่ยง vascular calcification`,
+      rec:"ลด/หยุด Ca-based binder; เปลี่ยนเป็น non-Ca binder (sevelamer); ทบทวน active Vit D",
+      drpKey:DRPK.electrolyte, drugs:[], id:"lab_hyperca" });
+  }
+  // Uncontrolled BP > 130/80 และไม่มียาลดความดัน
+  if (((!isNaN(sbpV) && sbpV > 130) || (!isNaN(dbpV) && dbpV > 80)) && !hasAntiHTN()) {
+    addFinding({ sev:SEV.MED,
+      msg:`BP ${bpSys||"?"}/${bpDia||"?"} mmHg (>130/80) — ความดันยังไม่ถึงเป้า แต่ไม่มียาลดความดันในรายการ`,
+      rec:"พิจารณาเริ่มยาลดความดัน (ACEI/ARB first-line ถ้ามี albuminuria) ตาม KDIGO 2024 เป้า <120 SBP",
+      drpKey:DRPK.omission, drugs:[], id:"lab_bp_untreated" });
+  }
+
+  // ---------- 7. Omission detection (ยาที่ควรได้รับ) ----------
+  // Proteinuria/albuminuria + ไม่มี ACEI/ARB
+  const hasProteinuria = (!isNaN(uacrV) && uacrV >= 30);
+  if (hasProteinuria && !hasACEIARB()) {
+    addFinding({ sev:SEV.MED,
+      msg:`มี albuminuria (UACR=${uacr} mg/g ≥30) แต่ไม่มี ACEI/ARB — ขาด renoprotection หลัก`,
+      rec:"พิจารณาเริ่ม ACEI หรือ ARB (ลด albuminuria, ชะลอ CKD) ถ้าไม่มีข้อห้าม; ติดตาม K⁺/Scr",
+      drpKey:DRPK.omission, drugs:[], id:"omit_acei_proteinuria" });
+  }
+  // CKD G3+ + DM + ไม่มี SGLT2i
+  if (ckdNum >= 3 && hasDM && !hasSGLT2drug() && !isNaN(eg) && eg >= 20) {
+    addFinding({ sev:SEV.LOW,
+      msg:"CKD G3+ ร่วมเบาหวาน แต่ไม่มี SGLT2 inhibitor — ขาดยาที่ลด CKD progression (DAPA-CKD/CREDENCE)",
+      rec:"พิจารณา SGLT2i (dapagliflozin/empagliflozin) ถ้า eGFR≥20 และไม่มีข้อห้าม ตาม KDIGO 2024",
+      drpKey:DRPK.omission, drugs:[], id:"omit_sglt2_dm" });
+  }
   // Sort by severity
   const order = { HIGH:0, MEDIUM:1, LOW:2 };
   findings.sort((a,b) => (order[a.sev]||2) - (order[b.sev]||2));

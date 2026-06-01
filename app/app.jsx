@@ -212,6 +212,7 @@ function App() {
 
   return (
     <div style={{ minHeight: "100vh", display: sideMode ? "flex" : "block", background: "var(--bg)", fontFamily: "var(--sans)", color: "var(--ink)" }}>
+      <style>{`@media print { .sidebar, header, .no-print { display: none !important; } body, .app-main { background: #fff !important; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
       {changePinOpen && <ChangePinModal user={user} onClose={() => setChangePinOpen(false)} onUpdated={updateCurrentUser} />}
       {sideMode ? (
         <aside className="sidebar" style={{ width: 232, background: 'linear-gradient(175deg, var(--sidebar) 0%, color-mix(in srgb,var(--sidebar) 80%,#000) 100%)', color: "var(--sidebar-ink)", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>

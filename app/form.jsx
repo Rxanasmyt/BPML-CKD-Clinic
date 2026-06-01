@@ -403,6 +403,7 @@ function blankMed() { return { drug: "", strength: "", dose: "", qtyPerDose: "",
 function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [f, setF] = React.useState(() => initial ? JSON.parse(JSON.stringify(initial)) : {
     hn: "", name: "", age: "", sex: "male", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
+    hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
     bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
     meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "",
     comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
@@ -719,6 +720,44 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
               <StepInput label="Na⁺" unit="mmol/L" value={f.na} onChange={(v) => set("na", v)} step={1} min={100} max={160} />
             </div>
 
+            {/* Hb StepInput — anemia of CKD */}
+            <div style={{ flex: "0 0 130px" }}>
+              <StepInput label="Hb" unit="g/dL" value={f.hb} onChange={(v) => set("hb", v)} step={0.1} min={3} max={20}
+                danger={f.hb && Number(f.hb) < 9} warn={f.hb && Number(f.hb) >= 9 && Number(f.hb) < 10} />
+            </div>
+
+            {/* HCO3 StepInput — metabolic acidosis */}
+            <div style={{ flex: "0 0 130px" }}>
+              <StepInput label="HCO₃⁻" unit="mEq/L" value={f.hco3} onChange={(v) => set("hco3", v)} step={1} min={5} max={40}
+                danger={f.hco3 && Number(f.hco3) < 18} warn={f.hco3 && Number(f.hco3) >= 18 && Number(f.hco3) < 22} />
+            </div>
+
+            {/* Phosphate StepInput */}
+            <div style={{ flex: "0 0 130px" }}>
+              <StepInput label="PO₄" unit="mmol/L" value={f.phos} onChange={(v) => set("phos", v)} step={0.1} min={0.3} max={4}
+                warn={f.phos && Number(f.phos) > 1.78} />
+            </div>
+
+            {/* Calcium StepInput */}
+            <div style={{ flex: "0 0 130px" }}>
+              <StepInput label="Ca" unit="mmol/L" value={f.ca} onChange={(v) => set("ca", v)} step={0.05} min={1} max={4}
+                warn={f.ca && Number(f.ca) > 2.6} />
+            </div>
+
+            {/* UACR StepInput — albuminuria */}
+            <div style={{ flex: "0 0 150px" }}>
+              <StepInput label="UACR" unit="mg/g" value={f.uacr} onChange={(v) => set("uacr", v)} step={10} min={0} max={5000}
+                warn={f.uacr && Number(f.uacr) >= 30 && Number(f.uacr) < 300} danger={f.uacr && Number(f.uacr) >= 300} />
+            </div>
+
+            {/* DM toggle — สำหรับ SGLT2i omission */}
+            <div style={{ flex: "0 0 150px", display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+              <button type="button" onClick={() => set("dm", !f.dm)}
+                style={{ padding: "9px 14px", borderRadius: 8, border: `1px solid ${f.dm ? "var(--brand)" : "var(--border)"}`, background: f.dm ? "var(--brand)" : "var(--surface)", color: f.dm ? "#fff" : "var(--ink-2)", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" }}>
+                {f.dm ? "✓ " : ""}เบาหวาน (DM)
+              </button>
+            </div>
+
             {/* BP Row */}
             <div style={{ flex: "1 1 260px" }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-2)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>ความดันโลหิต (mmHg)</div>
@@ -848,6 +887,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
         {/* DRP Auto-analysis panel */}
         <DrpAnalysisPanel meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} k={f.k} ckdStage={f.ckdStage}
+          hb={f.hb} hco3={f.hco3} phos={f.phos} ca={f.ca} bpSys={f.bpSys} bpDia={f.bpDia} uacr={f.uacr} dm={f.dm}
           onApplyDrps={(keys) => setF((p) => ({ ...p, drps: [...new Set([...(p.drps || []), ...keys])] }))} />
 
         {/* ส่วนที่ 4 */}
@@ -1012,13 +1052,17 @@ function searchDrugs(q) {
   const ql = q.toLowerCase().trim();
   if (!ql) return [];
   const rec = RecentDrugs.get();
+  const aliasMap = (typeof DRUG_ALIASES !== "undefined") ? DRUG_ALIASES : {};
   return DRUG_DB
     .map((d) => {
       const n = d.name.toLowerCase();
       const c = (d.cls || "").toLowerCase();
+      const aliases = (aliasMap[d.name] || []).map((a) => a.toLowerCase());
       let score = -1;
       if (n.startsWith(ql)) score = 100;
+      else if (aliases.some((a) => a.startsWith(ql))) score = 70;
       else if (n.includes(ql)) score = 60;
+      else if (aliases.some((a) => a.includes(ql))) score = 50;
       else if (c.includes(ql)) score = 30;
       if (score >= 0 && rec.includes(d.name)) score += 8;
       return { d, score };
@@ -1551,16 +1595,16 @@ function HerbOtcSection({ items, onChange }) {
 }
 
 /* ---------- DrpAnalysisPanel ---------- */
-function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, onApplyDrps }) {
+function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, onApplyDrps }) {
   const [open, setOpen] = React.useState(true);
 
   const findings = React.useMemo(() => {
     try {
       if (typeof window.analyzeDRPs !== "function") return [];
-      const res = window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage });
+      const res = window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm });
       return (res && Array.isArray(res.findings)) ? res.findings : [];
     } catch (e) { return []; }
-  }, [meds, otcItems, egfr, k, ckdStage]);
+  }, [meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm]);
 
   const drugCount = (meds || []).filter((m) => m.drug && m.drug.trim()).length;
   const itemCount = drugCount + (otcItems || []).length;

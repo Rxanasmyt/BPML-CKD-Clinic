@@ -328,11 +328,103 @@ const FLAG_LABEL = {
   k:           { th: "เสี่ยง K⁺", color: "#7c3aed" },
 };
 
+/* =========================================================================
+   DRUG_ALIASES — ชื่อการค้า (trade name) + ชื่อไทย → map กลับเป็นชื่อ INN ใน DRUG_DB
+   ใช้เพื่อให้ค้นหายาได้เร็วขึ้น (พิมพ์ "lasix" / "ลาซิกซ์" → เจอ Furosemide)
+   อ้างอิง: MIMS Thailand, Thai NLEM trade names
+   ========================================================================= */
+const DRUG_ALIASES = {
+  "Enalapril": ["renitec","enaril","อีนาลาพริล","อีนาริล"],
+  "Lisinopril": ["zestril","ไลซิโนพริล"],
+  "Ramipril": ["tritace","ramiwin","รามิพริล"],
+  "Losartan": ["cozaar","losaprex","โลซาร์แทน","โคซาร์"],
+  "Valsartan": ["diovan","วาลซาร์แทน"],
+  "Candesartan": ["blopress","atacand","แคนเดซาร์แทน"],
+  "Amlodipine": ["norvasc","amdipin","แอมโลดิพีน","นอร์วาสค์"],
+  "Metoprolol succinate": ["betaloc zok","seloken","เมโทโพรลอล"],
+  "Carvedilol": ["dilatrend","carduol","คาร์เวดิลอล"],
+  "Atenolol": ["tenormin","อะทีโนลอล"],
+  "Bisoprolol": ["concor","bisocor","ไบโซโพรลอล"],
+  "Furosemide": ["lasix","ลาซิกซ์","ฟูโรซีไมด์"],
+  "Hydrochlorothiazide": ["hctz","ไฮโดรคลอโรไทอาไซด์"],
+  "Spironolactone": ["aldactone","แอลแดคโทน","สไปโรโนแลคโตน"],
+  "Metformin": ["glucophage","glucient","กลูโคฟาจ","เมทฟอร์มิน","เมตฟอร์มิน"],
+  "Gliclazide": ["diamicron","ไดอะมิครอน","กลิคลาไซด์"],
+  "Glipizide": ["minidiab","กลิพิไซด์"],
+  "Glibenclamide": ["daonil","euglucon","ไกลเบนคลาไมด์"],
+  "Sitagliptin": ["januvia","จานูเวีย","ไซทากลิปติน"],
+  "Linagliptin": ["trajenta","ทราเจนทา"],
+  "Dapagliflozin": ["forxiga","ฟอร์ซิกา","ดาพากลิโฟลซิน"],
+  "Empagliflozin": ["jardiance","จาร์เดียนซ์","เอ็มพากลิโฟลซิน"],
+  "Atorvastatin": ["lipitor","stator","อะทอร์วาสแตติน","ลิพิทอร์"],
+  "Rosuvastatin": ["crestor","rovas","โรสุวาสแตติน","เครสเตอร์"],
+  "Simvastatin": ["zocor","bestatin","ซิมวาสแตติน"],
+  "Allopurinol": ["zyloric","ไซโลริก","อัลโลพูรินอล"],
+  "Colchicine": ["colchi","โคลชิซิน"],
+  "Warfarin": ["orfarin","cofarin","วาร์ฟาริน","ออร์ฟาริน"],
+  "Apixaban": ["eliquis","อะพิกซาแบน","เอลิควิส"],
+  "Rivaroxaban": ["xarelto","ริวารอกซาแบน","ซาเรลโต"],
+  "Dabigatran": ["pradaxa","ดาบิกาแทรน"],
+  "Omeprazole": ["losec","miracid","โอเมพราโซล"],
+  "Pantoprazole": ["controloc","pantoloc","แพนโทพราโซล"],
+  "Paracetamol (Acetaminophen)": ["tylenol","sara","พาราเซตามอล","ทัยลินอล"],
+  "Tramadol": ["tramol","ultracet","ทรามาดอล"],
+  "Gabapentin": ["neurontin","berlontin","กาบาเพนติน"],
+  "Pregabalin": ["lyrica","ลีริก้า","พรีกาบาลิน"],
+  "Ibuprofen": ["brufen","nurofen","ไอบูโพรเฟน"],
+  "Naproxen": ["naprosyn","นาพรอกเซน"],
+  "Diclofenac": ["voltaren","วอลทาเรน","ไดโคลฟีแนค"],
+  "Amoxicillin": ["amoxy","ออกซิลลิน","อะม็อกซี"],
+  "Amoxicillin+Clavulanate": ["augmentin","ออกเมนติน","co-amoxiclav"],
+  "Ciprofloxacin": ["ciprobay","ไซโปรฟลอกซาซิน"],
+  "Levofloxacin": ["cravit","tavanic","เลโวฟลอกซาซิน"],
+  "Digoxin": ["lanoxin","ดิจอกซิน"],
+  "Amiodarone": ["cordarone","คอร์ดาโรน","อะมิโอดาโรน"],
+  "Sertraline": ["zoloft","เซอร์ทราลีน"],
+  "Calcium carbonate": ["caltab","calcium","แคลเซียม","แคลแท็บ"],
+  "Sodium bicarbonate": ["nahco3","โซเดียมไบคาร์บอเนต","ไบคาร์บ"],
+  "Ferrous fumarate": ["ferrous","ธาตุเหล็ก","เฟอรัส"],
+  "Folic acid": ["folate","โฟลิก","กรดโฟลิก"],
+};
+
+// reverse index: alias(lowercase) → INN name
+const ALIAS_INDEX = (() => {
+  const idx = {};
+  Object.keys(DRUG_ALIASES).forEach((inn) => {
+    (DRUG_ALIASES[inn] || []).forEach((a) => { idx[a.toLowerCase()] = inn; });
+  });
+  return idx;
+})();
+
 function lookupDrug(name) {
   if (!name) return null;
   const n = name.trim().toLowerCase();
   return DRUG_DB.find((d) => d.name.toLowerCase() === n) ||
-         DRUG_DB.find((d) => d.name.toLowerCase().startsWith(n)) || null;
+         DRUG_DB.find((d) => d.name.toLowerCase().startsWith(n)) ||
+         (ALIAS_INDEX[n] ? DRUG_DB.find((d) => d.name === ALIAS_INDEX[n]) : null) ||
+         null;
+}
+
+// searchDrugs(query) → [{name, cls, ...}] matched by INN name OR trade/Thai alias
+function searchDrugs(query, limit = 12) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return [];
+  const scored = [];
+  DRUG_DB.forEach((d) => {
+    const nm = d.name.toLowerCase();
+    const aliases = (DRUG_ALIASES[d.name] || []).map((a) => a.toLowerCase());
+    let score = -1;
+    if (nm === q) score = 100;
+    else if (nm.startsWith(q)) score = 80;
+    else if (aliases.some((a) => a === q)) score = 75;
+    else if (aliases.some((a) => a.startsWith(q))) score = 60;
+    else if (nm.includes(q)) score = 40;
+    else if (aliases.some((a) => a.includes(q))) score = 30;
+    else if ((d.cls || "").toLowerCase().includes(q)) score = 20;
+    if (score >= 0) scored.push({ d, score });
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.d);
 }
 
 /* =========================================================================
@@ -488,4 +580,4 @@ function maxDailyDoseFor(name, egfr) {
   return null;
 }
 
-Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug, DRUG_DOSING, maxDailyDoseFor });
+Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug, DRUG_DOSING, maxDailyDoseFor, DRUG_ALIASES, searchDrugs });

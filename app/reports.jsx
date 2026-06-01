@@ -39,7 +39,7 @@ function ReportsPage({ records, user }) {
   for (let y = today.getFullYear(); y >= today.getFullYear() - 4; y--) yearOpts.push(y);
 
   function exportCSV() {
-    const headers = ["id", "date", "hn", "name", "age", "ckdStage", "egfr", "scr", "k", "na", "bpSys", "bpDia", "hr", "allergy", "drps", "drpDetail", "discrepancy", "discrepancyType", "interventions", "outcome", "pharmacist", "physician"];
+    const headers = ["id", "date", "hn", "name", "age", "ckdStage", "egfr", "scr", "k", "na", "hb", "hco3", "phos", "ca", "uacr", "dm", "bpSys", "bpDia", "hr", "allergy", "drps", "drpDetail", "discrepancy", "discrepancyType", "interventions", "outcome", "pharmacist", "physician"];
     const rows = monthRecords.map((r) => headers.map((h) => {
       const v = r[h];
       if (Array.isArray(v)) return '"' + v.join("; ").replace(/"/g, '""') + '"';
@@ -69,9 +69,14 @@ function ReportsPage({ records, user }) {
         title="รายงานรายเดือน"
         sub="Monthly Reports"
         action={
-          <button onClick={exportCSV} style={{ ...primaryBtn, background: "#16a34a" }}>
-            <Icon name="download" size={18} color="#fff" />Export CSV
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => window.print()} className="no-print" style={{ ...primaryBtn, background: "var(--brand)" }}>
+              <Icon name="download" size={18} color="#fff" />พิมพ์ / PDF
+            </button>
+            <button onClick={exportCSV} className="no-print" style={{ ...primaryBtn, background: "#16a34a" }}>
+              <Icon name="download" size={18} color="#fff" />Export CSV
+            </button>
+          </div>
         }
       />
 

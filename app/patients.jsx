@@ -314,10 +314,64 @@ function TrendPanel({ history, onSelectVisit }) {
     { key: "bpSys", label: "BP Systolic", unit: "mmHg", good: "low",
       refLines: [{ value: 140, color: "#d97706" }, { value: 160, color: "#dc2626" }],
       getColor: (v) => bpColor(v) },
+    { key: "hb", label: "Hb Hemoglobin", unit: "g/dL", good: "high",
+      refLines: [{ value: 10, color: "#d97706" }],
+      getColor: (v) => (!v ? "#be185d" : v < 10 ? "#dc2626" : v < 11 ? "#d97706" : "#16a34a") },
   ];
+
+  // ---------- Trend-based alerts (progression / persistent DRP / polypharmacy) ----------
+  const trendAlerts = (() => {
+    const out = [];
+    // eGFR progression: เทียบ visit แรกกับล่าสุดที่มีค่า + ปรับเป็นต่อปี
+    const eg = chrono.map((r) => ({ v: parseFloat(r.egfr), d: r.date })).filter((x) => !isNaN(x.v) && x.d);
+    if (eg.length >= 2) {
+      const first = eg[0], lastE = eg[eg.length - 1];
+      const days = (new Date(lastE.d) - new Date(first.d)) / 86400000;
+      if (days >= 90) {
+        const drop = first.v - lastE.v; // บวก = แย่ลง
+        const perYear = drop / (days / 365);
+        if (perYear >= 5) out.push({ sev: "high", msg: `⚠️ eGFR ลดลง ~${perYear.toFixed(1)} mL/min/ปี (${first.v}→${lastE.v}) — CKD progression เร็วกว่าปกติ`, rec: "ทบทวนสาเหตุ (BP, proteinuria, NSAID, volume); เพิ่ม renoprotection ตาม KDIGO" });
+        else if (perYear >= 3) out.push({ sev: "med", msg: `eGFR ลดลง ~${perYear.toFixed(1)} mL/min/ปี (${first.v}→${lastE.v}) — เฝ้าระวัง progression`, rec: "ติดตามถี่ขึ้น; ทบทวนปัจจัยเร่ง CKD" });
+      }
+    }
+    // Persistent DRP: DRP เดียวกันปรากฏ ≥2 visit ติดกันล่าสุด
+    if (chrono.length >= 2) {
+      const lastV = chrono[chrono.length - 1], prevV = chrono[chrono.length - 2];
+      const persist = (lastV.drps || []).filter((d) => (prevV.drps || []).includes(d));
+      if (persist.length) {
+        const labels = persist.map((k) => (DRP_OPTIONS.find((o) => o.key === k) || {}).th || k).join(", ");
+        out.push({ sev: "med", msg: `DRP เดิมยังคงอยู่ ≥2 ครั้งติดกัน: ${labels}`, rec: "DRP ยังไม่ได้รับการแก้ไข — ทบทวน intervention และติดตามผล" });
+      }
+    }
+    // Polypharmacy trend: จำนวนยาเพิ่มขึ้น
+    const counts = chrono.map((r) => (r.meds || []).filter((m) => m.drug && m.drug.trim()).length);
+    if (counts.length >= 2) {
+      const lastC = counts[counts.length - 1], firstC = counts[0];
+      if (lastC >= 10) out.push({ sev: "med", msg: `Polypharmacy: ปัจจุบัน ${lastC} รายการยา (≥10) — เสี่ยง DDI/adherence`, rec: "พิจารณา deprescribing; ทบทวนความจำเป็นของแต่ละยา" });
+      else if (lastC - firstC >= 3) out.push({ sev: "low", msg: `จำนวนยาเพิ่มขึ้น ${firstC}→${lastC} รายการ — เฝ้าระวัง polypharmacy`, rec: "ทบทวนรายการยาเป็นระยะ" });
+    }
+    return out;
+  })();
+
+  const alertTone = { high: { bg: "#fef2f2", bd: "#fca5a5", c: "#b91c1c" }, med: { bg: "#fffbeb", bd: "#fcd34d", c: "#b45309" }, low: { bg: "#eff6ff", bd: "#bfdbfe", c: "#1d4ed8" } };
 
   return (
     <div>
+      {/* Trend-based alerts */}
+      {trendAlerts.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          {trendAlerts.map((a, i) => {
+            const t = alertTone[a.sev];
+            return (
+              <div key={i} style={{ border: `1.5px solid ${t.bd}`, background: t.bg, borderRadius: 12, padding: "11px 15px" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: t.c, lineHeight: 1.4 }}>{a.msg}</div>
+                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 3 }}>→ {a.rec}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Enhanced Lab Trend Charts */}
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 18 }}>
