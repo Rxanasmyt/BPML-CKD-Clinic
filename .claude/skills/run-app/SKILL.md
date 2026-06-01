@@ -14,6 +14,25 @@ Expected: `200`
 
 ## Pre-release checklist (run ALL before every commit)
 
+### 0. Babel transform check (STRONGEST — catches ALL syntax errors) ⭐
+This uses the EXACT same Babel the app loads in-browser, so if it passes here it
+will parse in the browser. Run this FIRST — it would have caught every `size:11`
+type bug instantly.
+```bash
+node -e "
+const fs=require('fs'), vm=require('vm');
+const s={console}; s.self=s; s.window=s; s.global=s; vm.createContext(s);
+vm.runInContext(fs.readFileSync('vendor/babel.min.js','utf8'), s);
+const B=s.Babel; let ok=true;
+['drug_db','herb_db','drp_engine','data','theme','tweaks-panel','firebase','settings','login','dashboard','patients','form','calendar','reports','app'].forEach(f=>{
+  try{B.transform(fs.readFileSync('app/'+f+'.jsx','utf8'),{presets:['react']});console.log('OK    '+f);}
+  catch(e){ok=false;console.log('ERROR '+f+' — '+String(e.message).split(String.fromCharCode(10))[0]);}
+});
+process.exit(ok?0:1);
+"
+# Every file must print OK. Any ERROR = browser white screen.
+```
+
 ### 1. JSX attribute syntax — colon instead of equals
 ```bash
 # Finds prop:value bugs like size:11 (should be size={11})

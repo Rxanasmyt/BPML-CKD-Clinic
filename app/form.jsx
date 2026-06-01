@@ -404,7 +404,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [f, setF] = React.useState(() => initial ? JSON.parse(JSON.stringify(initial)) : {
     hn: "", name: "", age: "", sex: "male", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
     bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
-    meds: [blankMed()], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "",
+    meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "",
     comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
     interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
     pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
@@ -505,15 +505,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   }, []);
 
   const setMed = (i, k, v) => setF((p) => { const m = [...p.meds]; m[i] = { ...m[i], [k]: v }; return { ...p, meds: m }; });
-  const pickDrug = (i, d) => {
-    RecentDrugs.record(d.name);
-    setF((p) => {
-      const m = [...p.meds];
-      m[i] = { ...m[i], drug: d.name, strength: d.strengths[0] || m[i].strength || "", flags: d.flags };
-      return { ...p, meds: m };
-    });
-  };
   const addMed = () => setF((p) => ({ ...p, meds: [...p.meds, blankMed()] }));
+  const addDrugFromSearch = (d) => {
+    RecentDrugs.record(d.name);
+    setF((p) => ({ ...p, meds: [...p.meds, { ...blankMed(), drug: d.name, strength: (d.strengths && d.strengths[0]) || "", flags: d.flags || [] }] }));
+  };
   const delMed = (i) => setF((p) => ({ ...p, meds: p.meds.filter((_, j) => j !== i) }));
 
   // Feature 1: allergy conflicts per med row
@@ -821,18 +817,29 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {f.meds.map((m, i) => (
-              <MedRow
-                key={i} i={i} m={m} setMed={setMed} pickDrug={pickDrug}
-                del={() => delMed(i)} canDel={f.meds.length > 1}
-                allergyConflict={allergyConflicts[i]}
-              />
-            ))}
-          </div>
-          <button type="button" onClick={addMed} style={{ ...ghostBtn, marginTop: 12, borderStyle: "dashed", width: "100%", justifyContent: "center" }}>
-            <Icon name="plus" size={16} /> เพิ่มรายการยา
-          </button>
+          {/* Search-first drug entry */}
+          <MedSearchAdd onAdd={addDrugFromSearch} onAddBlank={addMed}
+            existing={f.meds.map((m) => m.drug)} />
+
+          {/* Added medication cards */}
+          {f.meds.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+              {f.meds.map((m, i) => (
+                <MedCard
+                  key={i} i={i} m={m} setMed={setMed}
+                  del={() => delMed(i)}
+                  allergyConflict={allergyConflicts[i]}
+                />
+              ))}
+            </div>
+          ) : (
+            <div style={{ marginTop: 14, padding: "26px 18px", textAlign: "center", border: "1.5px dashed var(--border)", borderRadius: 12, background: "var(--surface-2)" }}>
+              <div style={{ fontSize: 30, marginBottom: 6 }}>💊</div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink)" }}>ยังไม่มีรายการยา</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 3 }}>พิมพ์ชื่อยาในช่องค้นหาด้านบนเพื่อเพิ่มได้อย่างรวดเร็ว</div>
+            </div>
+          )}
+
           <HerbOtcSection items={f.otcItems || []} onChange={(v) => set("otcItems", v)} />
         </FSection>
         </div>{/* /section-2-ref */}
@@ -998,154 +1005,194 @@ function DrugInfoCard({ drug }) {
   );
 }
 
-/* ---------- Med row + autosuggest + dose builder ---------- */
-function MedRow({ i, m, setMed, pickDrug, del, canDel, allergyConflict }) {
+/* ---------- Drug search (name + class, recent-boosted) ---------- */
+function searchDrugs(q) {
+  const ql = q.toLowerCase().trim();
+  if (!ql) return [];
+  const rec = RecentDrugs.get();
+  return DRUG_DB
+    .map((d) => {
+      const n = d.name.toLowerCase();
+      const c = (d.cls || "").toLowerCase();
+      let score = -1;
+      if (n.startsWith(ql)) score = 100;
+      else if (n.includes(ql)) score = 60;
+      else if (c.includes(ql)) score = 30;
+      if (score >= 0 && rec.includes(d.name)) score += 8;
+      return { d, score };
+    })
+    .filter((x) => x.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map((x) => x.d);
+}
+
+/* ---------- MedSearchAdd — search-first medication entry ---------- */
+function MedSearchAdd({ onAdd, onAddBlank, existing }) {
+  const [q, setQ] = React.useState("");
   const [focus, setFocus] = React.useState(false);
-  const [expanded, setExpanded] = React.useState(!m.drug);
-  const [dropPos, setDropPos] = React.useState(null);
-  const drugInputRef = React.useRef(null);
+  const [active, setActive] = React.useState(0);
+  const inputRef = React.useRef(null);
 
-  const matches = focus && m.drug.trim().length >= 1
-    ? RecentDrugs.sorted(m.drug.trim())
-    : (focus ? RecentDrugs.sorted("") : []);
+  const recents = React.useMemo(() => {
+    const rec = RecentDrugs.get();
+    return rec.map((n) => DRUG_DB.find((d) => d.name === n)).filter(Boolean).slice(0, 6);
+  }, [focus]);
 
-  const hasConflict = allergyConflict && allergyConflict.conflict;
+  const matches = q.trim() ? searchDrugs(q.trim()) : recents;
+  const showDrop = focus && matches.length > 0;
 
-  function openDrop() {
-    if (drugInputRef.current) {
-      const r = drugInputRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - r.bottom;
-      setDropPos({
-        top: spaceBelow > 260 ? r.bottom + 4 : r.top - 4,
-        left: r.left,
-        width: Math.max(r.width, 420),
-        above: spaceBelow <= 260,
-      });
+  React.useEffect(() => { setActive(0); }, [q]);
+
+  function pick(d) {
+    onAdd(d);
+    setQ("");
+    setActive(0);
+    if (inputRef.current) inputRef.current.focus(); // keep focus for rapid multi-add
+  }
+
+  function onKeyDown(e) {
+    if (!showDrop) {
+      if (e.key === "Enter" && q.trim()) { e.preventDefault(); onAddBlank(); setQ(""); }
+      return;
     }
-    setFocus(true);
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, matches.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); if (matches[active]) pick(matches[active]); }
+    else if (e.key === "Escape") { setFocus(false); }
   }
 
   return (
-    <div>
-      {hasConflict && (
-        <div style={{ padding: "8px 12px 8px 16px", background: "#fef2f2", border: "1px solid #fca5a5", borderBottom: "none", borderRadius: "10px 10px 0 0", fontSize: 12.5, fontWeight: 600, color: "#b91c1c", display: "flex", alignItems: "center", gap: 7 }}>
-          ⚠️ แพ้ยา: {allergyConflict.reason}
+    <div style={{ position: "relative" }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex" }}>
+            <Icon name="search" size={18} color="var(--brand)" />
+          </span>
+          <input
+            ref={inputRef} value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onFocus={() => setFocus(true)}
+            onBlur={() => setTimeout(() => setFocus(false), 160)}
+            onKeyDown={onKeyDown}
+            placeholder="ค้นหายา — พิมพ์ชื่อหรือกลุ่มยา เช่น Enalapril, ARB, Metformin…"
+            style={{
+              width: "100%", padding: "13px 14px 13px 42px",
+              border: `1.5px solid ${focus ? "var(--brand)" : "var(--border)"}`,
+              borderRadius: 11, fontSize: 14.5, fontFamily: "var(--sans)",
+              color: "var(--ink)", background: "var(--surface)", outline: "none",
+              boxShadow: focus ? "0 0 0 3px color-mix(in srgb,var(--brand) 14%,transparent)" : "none",
+              transition: "border-color .15s, box-shadow .15s", boxSizing: "border-box",
+            }}
+          />
         </div>
-      )}
-      <div style={{
-        border: `1px solid ${hasConflict ? "#fca5a5" : "var(--border)"}`,
-        borderTop: hasConflict ? "none" : undefined,
-        borderLeft: hasConflict ? "4px solid #dc2626" : undefined,
-        borderRadius: hasConflict ? "0 0 12px 12px" : 12,
-        background: "var(--surface-2)", position: "relative",
-      }}>
-        {/* Collapsed / header bar */}
-        {!expanded ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", minHeight: 48 }}>
-            <span style={{ width: 22, height: 22, borderRadius: 6, background: "var(--brand)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
-            <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>{(m.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {m.drug || <span style={{ color: "var(--ink-2)", fontWeight: 400, fontStyle: "italic" }}>ยังไม่ระบุ</span>}
-              {m.strength && <span style={{ fontFamily: "var(--mono)", fontWeight: 400, color: "var(--ink-2)", fontSize: 12, marginLeft: 8 }}>{m.strength}</span>}
-              {m.dose && <span style={{ fontFamily: "var(--mono)", fontWeight: 400, color: "var(--ink-2)", fontSize: 12, marginLeft: 8 }}>{m.dose}</span>}
-            </span>
-            {m.actuallyTaking && m.actuallyTaking !== "ตามสั่ง" && (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "#fef9c3", color: "#713f12", border: "1px solid #fde047", flexShrink: 0 }}>{m.actuallyTaking}</span>
-            )}
-            <button type="button" onClick={() => setExpanded(true)}
-              style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface)", cursor: "pointer", padding: "4px 8px", fontSize: 12, color: "var(--ink-2)", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
-              ▼ แก้ไข
-            </button>
-            {canDel && <button type="button" onClick={del} title="ลบ" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, flexShrink: 0 }}><Icon name="x" size={16} /></button>}
-          </div>
-        ) : (
-          <div style={{ padding: 12 }}>
-            {/* Expanded header row with collapse button */}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              {m.drug && (
-                <button type="button" onClick={() => setExpanded(false)}
-                  style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface)", cursor: "pointer", padding: "4px 10px", fontSize: 12, color: "var(--ink-2)" }}>
-                  ▲ ยุบ
-                </button>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <span style={{ width: 24, height: 24, borderRadius: 7, background: "var(--brand)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 22 }}>{i + 1}</span>
+        <button type="button" onMouseDown={(e) => { e.preventDefault(); onAddBlank(); setQ(""); }}
+          title="เพิ่มยาที่ไม่อยู่ในระบบ (กรอกเอง)"
+          style={{ ...ghostBtn, borderStyle: "dashed", whiteSpace: "nowrap", padding: "0 14px" }}>
+          <Icon name="plus" size={16} /> กรอกเอง
+        </button>
+      </div>
 
-              <div style={{ flex: "2 1 200px", position: "relative" }}>
-                <MiniLabel>ชื่อยา / Drug</MiniLabel>
-                <input ref={drugInputRef} style={inS} value={m.drug} onChange={(e) => setMed(i, "drug", e.target.value)}
-                  onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 180)}
-                  placeholder="พิมพ์ชื่อยา..." />
-                {focus && matches.length > 0 && (
-                  <div style={{
-                    position: "absolute",
-                    top: "100%", left: 0,
-                    minWidth: "100%", width: "max-content", maxWidth: 480,
-                    maxHeight: 380, overflowY: "auto",
-                    zIndex: 9000, background: "var(--surface)", border: "1px solid var(--border)",
-                    borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,.18)",
-                    marginTop: 4,
-                  }}>
-                    <div style={{ padding: "8px 14px 6px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>🔍</span>
-                      <span>{m.drug.trim() ? "ผลการค้นหา" : "ยาที่ใช้บ่อย"}</span>
-                      <span style={{ marginLeft: "auto", fontWeight: 400, fontSize: 10, color: "var(--ink-2)" }}>{matches.length} รายการ</span>
-                    </div>
-                    {matches.slice(0, 8).map((d) => (
-                      <div key={d.name} onMouseDown={() => { pickDrug(i, d); setExpanded(false); }} className="acrow"
-                        style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ink)" }}>{d.name}</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "var(--brand-soft)", color: "var(--brand-deep)", border: "1px solid var(--brand)30" }}>{d.cls}</span>
-                          <span style={{ display: "flex", gap: 4, marginLeft: "auto" }}>{(d.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
-                        </div>
-                        {d.strengths && d.strengths.length > 0 && (
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: d.note ? 4 : 0 }}>
-                            {d.strengths.map((s) => (
-                              <span key={s} style={{ fontSize: 11, fontFamily: "var(--mono)", padding: "1px 6px", borderRadius: 5, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--ink-2)" }}>{s}</span>
-                            ))}
-                          </div>
-                        )}
-                        {d.note && <div style={{ fontSize: 11, color: (d.flags||[]).includes("contra") || (d.flags||[]).includes("nephrotoxic") ? "#b91c1c" : "var(--ink-2)", lineHeight: 1.4 }}>{d.note}</div>}
-                      </div>
+      {showDrop && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, marginTop: 6,
+          maxHeight: 420, overflowY: "auto", zIndex: 9000,
+          background: "var(--surface)", border: "1.5px solid var(--brand)",
+          borderRadius: 12, boxShadow: "0 16px 48px rgba(0,0,0,.22)",
+        }}>
+          <div style={{ padding: "9px 14px 7px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: .4, background: "var(--surface-2)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 6, position: "sticky", top: 0 }}>
+            <span>{q.trim() ? "🔍 ผลการค้นหา" : "🕑 ยาที่ใช้บ่อย"}</span>
+            <span style={{ marginLeft: "auto", fontWeight: 400, fontSize: 10 }}>{matches.length} รายการ · ↑↓ เลือก · Enter เพิ่ม</span>
+          </div>
+          {matches.map((d, idx) => {
+            const added = (existing || []).includes(d.name);
+            const danger = (d.flags || []).includes("contra") || (d.flags || []).includes("nephrotoxic");
+            return (
+              <div key={d.name} onMouseDown={() => pick(d)} onMouseEnter={() => setActive(idx)}
+                style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--border)",
+                  background: idx === active ? "var(--brand-soft)" : "var(--surface)",
+                  borderLeft: `3px solid ${idx === active ? "var(--brand)" : "transparent"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--ink)" }}>{d.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "var(--brand-soft)", color: "var(--brand-deep)", border: "1px solid color-mix(in srgb,var(--brand) 30%,transparent)" }}>{d.cls}</span>
+                  <span style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                    {added && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--brand-deep)" }}>เพิ่มแล้ว ✓</span>}
+                    {(d.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}
+                  </span>
+                </div>
+                {d.strengths && d.strengths.length > 0 && (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                    {d.strengths.map((s) => (
+                      <span key={s} style={{ fontSize: 11, fontFamily: "var(--mono)", padding: "1px 6px", borderRadius: 5, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--ink-2)" }}>{s}</span>
                     ))}
-                    {matches.length === 0 && (
-                      <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--ink-2)", fontStyle: "italic" }}>พิมพ์ชื่อเพิ่มเองได้</div>
-                    )}
-                    {m.drug.trim() && matches.length < 8 && (
-                      <div style={{ padding: "8px 14px", fontSize: 11.5, color: "var(--ink-2)", borderTop: "1px solid var(--border)", background: "var(--surface-2)" }}>พิมพ์ชื่อเพิ่มเองได้</div>
-                    )}
                   </div>
                 )}
+                {d.note && <div style={{ fontSize: 11, color: danger ? "#b91c1c" : "var(--ink-2)", lineHeight: 1.4, marginTop: 4 }}>{danger ? "⚠️ " : ""}{d.note}</div>}
               </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
-              <div style={{ flex: "0 0 130px" }}>
-                <MiniLabel>ความแรง</MiniLabel>
-                <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
-              </div>
+/* ---------- MedCard — compact, clear medication card ---------- */
+function MedCard({ i, m, setMed, del, allergyConflict }) {
+  const info = lookupDrug(m.drug);
+  const hasConflict = allergyConflict && allergyConflict.conflict;
+  const danger = (m.flags || []).includes("contra") || (m.flags || []).includes("nephrotoxic");
+  const accent = hasConflict || danger ? "#dc2626" : "var(--brand)";
 
-              <div style={{ flex: "1.8 1 160px" }}>
-                <MiniLabel>ขนาด/วิธีใช้</MiniLabel>
-                <DoseBuilder value={m.dose} onChange={(v) => setMed(i, "dose", v)} />
-              </div>
+  return (
+    <div style={{
+      border: `1px solid ${hasConflict ? "#fca5a5" : "var(--border)"}`,
+      borderLeft: `4px solid ${accent}`,
+      borderRadius: 12, background: "var(--surface)", position: "relative",
+      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+    }}>
+      {hasConflict && (
+        <div style={{ padding: "8px 14px", background: "#fef2f2", borderBottom: "1px solid #fca5a5", borderRadius: "8px 0 0 0", fontSize: 12.5, fontWeight: 700, color: "#b91c1c", display: "flex", alignItems: "center", gap: 7 }}>
+          ⚠️ เตือนแพ้ยา: {allergyConflict.reason}
+        </div>
+      )}
+      <div style={{ padding: "12px 14px" }}>
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+          <span style={{ width: 24, height: 24, borderRadius: 7, background: "var(--brand)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+          {info ? (
+            <span style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>{m.drug}</span>
+          ) : (
+            <input style={{ ...inS, flex: 1, fontWeight: 700, maxWidth: 280 }} value={m.drug}
+              onChange={(e) => setMed(i, "drug", e.target.value)} placeholder="ชื่อยา (กรอกเอง)…" />
+          )}
+          {info && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "var(--brand-soft)", color: "var(--brand-deep)", border: "1px solid color-mix(in srgb,var(--brand) 30%,transparent)" }}>{info.cls}</span>}
+          <span style={{ display: "flex", gap: 5, marginLeft: "auto", flexShrink: 0 }}>{(m.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
+          <button type="button" onClick={del} title="ลบรายการนี้" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, flexShrink: 0 }}><Icon name="x" size={17} /></button>
+        </div>
 
-              <div style={{ flex: "1.4 1 120px" }}>
-                <MiniLabel>ผู้ป่วยกินจริง</MiniLabel>
-                <input style={inS} value={m.actuallyTaking} onChange={(e) => setMed(i, "actuallyTaking", e.target.value)} placeholder="ตามสั่ง / ระบุ" />
-              </div>
+        {/* Body — strength / dose / actually-taking */}
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap", paddingLeft: 33 }}>
+          <div style={{ flex: "0 0 140px" }}>
+            <MiniLabel>ความแรง</MiniLabel>
+            <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
+          </div>
+          <div style={{ flex: "1.6 1 160px" }}>
+            <MiniLabel>ขนาด/วิธีใช้</MiniLabel>
+            <DoseBuilder value={m.dose} onChange={(v) => setMed(i, "dose", v)} />
+          </div>
+          <div style={{ flex: "1.2 1 130px" }}>
+            <MiniLabel>ผู้ป่วยกินจริง</MiniLabel>
+            <input style={inS} value={m.actuallyTaking} onChange={(e) => setMed(i, "actuallyTaking", e.target.value)} placeholder="ตามสั่ง / ระบุ" />
+          </div>
+        </div>
 
-              {canDel && <button type="button" onClick={del} title="ลบ" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, marginTop: 20 }}><Icon name="x" size={18} /></button>}
-            </div>
-
-            {m.flags && m.flags.length > 0 && (
-              <div style={{ display: "flex", gap: 6, marginTop: 8, marginLeft: 34, flexWrap: "wrap" }}>
-                {m.flags.map((fl) => <FlagTag key={fl} fl={fl} />)}
-              </div>
-            )}
-            {m.drug && <DrugInfoCard drug={m.drug} />}
+        {m.flags && m.flags.length > 0 && (
+          <div style={{ display: "flex", gap: 6, marginTop: 9, paddingLeft: 33, flexWrap: "wrap" }}>
+            {m.flags.map((fl) => <FlagTag key={fl} fl={fl} />)}
           </div>
         )}
+        {m.drug && info && info.note && <DrugInfoCard drug={m.drug} />}
       </div>
     </div>
   );
@@ -1346,45 +1393,72 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, onApplyDrps }) {
   const findings = React.useMemo(() => {
     try {
       if (typeof window.analyzeDRPs !== "function") return [];
-      return window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage }) || [];
+      const res = window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage });
+      return (res && Array.isArray(res.findings)) ? res.findings : [];
     } catch (e) { return []; }
   }, [meds, otcItems, egfr, k, ckdStage]);
 
-  if (!findings.length) return null;
+  const drugCount = (meds || []).filter((m) => m.drug && m.drug.trim()).length;
+  const itemCount = drugCount + (otcItems || []).length;
 
-  const highestSev = findings.some((f) => f.severity === "HIGH") ? "HIGH"
-    : findings.some((f) => f.severity === "MEDIUM") ? "MEDIUM" : "LOW";
+  const counts = {
+    HIGH: findings.filter((f) => f.sev === "HIGH").length,
+    MEDIUM: findings.filter((f) => f.sev === "MEDIUM").length,
+    LOW: findings.filter((f) => f.sev === "LOW").length,
+  };
+
+  // Clean state — reassure the pharmacist (only when there are items to analyse)
+  if (!findings.length) {
+    if (itemCount === 0) return null;
+    return (
+      <div style={{ marginBottom: 14, border: "1px solid #86efac", borderRadius: 14, background: "#f0fdf4", padding: "13px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 18 }}>✅</span>
+        <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: "#166534" }}>ตรวจวิเคราะห์อัตโนมัติแล้ว — ไม่พบปัญหาด้านยา (DRP)</span>
+        <span style={{ fontSize: 11.5, color: "#15803d" }}>ตรวจ {itemCount} รายการ</span>
+      </div>
+    );
+  }
+
+  const highestSev = counts.HIGH ? "HIGH" : counts.MEDIUM ? "MEDIUM" : "LOW";
   const sevColor = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[highestSev];
   const sevBg    = { HIGH: "#fef2f2", MEDIUM: "#fffbeb", LOW: "#eff6ff" }[highestSev];
 
   function applyAll() {
-    const keys = [...new Set(findings.flatMap((f) => f.drpKeys || []))];
+    const keys = [...new Set(findings.map((f) => f.drpKey).filter(Boolean))];
     if (keys.length) onApplyDrps(keys);
   }
 
   const SEV_ICON = { HIGH: "⚠️", MEDIUM: "!", LOW: "ℹ️" };
 
   return (
-    <div style={{ marginBottom: 14, border: `1px solid ${sevColor}40`, borderRadius: 14, overflow: "hidden", background: sevBg }}>
+    <div style={{ marginBottom: 14, border: `1.5px solid ${sevColor}`, borderRadius: 14, overflow: "hidden", background: sevBg, boxShadow: `0 4px 18px ${sevColor}22` }}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
-        <span style={{ fontSize: 16 }}>🔍</span>
-        <span style={{ flex: 1, fontSize: 14.5, fontWeight: 700, color: sevColor }}>ผลวิเคราะห์ DRP อัตโนมัติ</span>
-        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: sevColor, color: "#fff" }}>{findings.length} รายการ</span>
-        <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", color: sevColor }}><Icon name="chevron" size={18} /></span>
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
+        <span className={highestSev === "HIGH" ? "risk-high-pulse" : ""} style={{ fontSize: 16, width: 30, height: 30, borderRadius: "50%", background: sevColor, color: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}>🔍</span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: sevColor }}>ผลวิเคราะห์ปัญหาด้านยา (DRP) อัตโนมัติ</span>
+          <span style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
+            {counts.HIGH > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#dc2626", color: "#fff" }}>สูง {counts.HIGH}</span>}
+            {counts.MEDIUM > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#d97706", color: "#fff" }}>กลาง {counts.MEDIUM}</span>}
+            {counts.LOW > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#2563eb", color: "#fff" }}>ต่ำ {counts.LOW}</span>}
+          </span>
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: sevColor, color: "#fff", flexShrink: 0 }}>{findings.length} รายการ</span>
+        <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", color: sevColor, flexShrink: 0 }}><Icon name="chevron" size={18} /></span>
       </button>
       {open && (
         <div style={{ padding: "0 18px 14px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {findings.map((fd, i) => {
-              const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[fd.severity] || "#64748b";
+              const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[fd.sev] || "#64748b";
+              const label = { HIGH: "สูง", MEDIUM: "กลาง", LOW: "ต่ำ" }[fd.sev] || fd.sev;
               return (
                 <div key={i} style={{ border: `1px solid ${sc}30`, borderRadius: 10, padding: "10px 13px", background: "var(--surface)" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                    <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.severity]} {fd.severity}</span>
+                    <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.sev]} {label}</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.message}</div>
-                      {fd.recommendation && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.recommendation}</div>}
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.msg}</div>
+                      {fd.rec && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.rec}</div>}
                     </div>
                   </div>
                 </div>
