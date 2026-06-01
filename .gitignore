@@ -1,2 +1,9 @@
 .claude/*
 !.claude/skills/
+
+# Firebase deploy cache + local credentials (อย่า commit)
+.firebase/
+firebase-debug.log
+*-debug.log
+serviceAccount*.json
+*sa-key.json
