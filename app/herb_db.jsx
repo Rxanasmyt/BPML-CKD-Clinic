@@ -154,6 +154,18 @@ const HERB_DOSING = [
     note:"Zinc >40 mg/วัน → copper deficiency; ระวังใน CKD" },
   { keys:["vitamin a","วิตามิน เอ","retinol"], unit:"IU", maxDaily:3000,
     note:"⚠️ Vitamin A สะสมใน CKD → toxicity; หลีกเลี่ยงการเสริม" },
+  { keys:["vitamin e","วิตามิน อี","tocopherol"], unit:"IU", maxDaily:400,
+    note:"Vitamin E >400 IU/วัน → เพิ่มความเสี่ยงเลือดออก โดยเฉพาะร่วมยาต้านการแข็งตัวเลือด" },
+  { keys:["vitamin b6","วิตามิน บี 6","วิตามินบี6","pyridoxine"], unit:"mg", maxDaily:100,
+    note:"Vitamin B6 >100 mg/วัน นาน ๆ → peripheral neuropathy" },
+  { keys:["coq10","coenzyme q10","โคคิวเท็น","ubiquinone"], unit:"mg", maxDaily:300,
+    note:"CoQ10 >300 mg/วัน — อาจลด BP/น้ำตาล; ระวังร่วมยาความดัน/เบาหวาน/warfarin" },
+  { keys:["glucosamine","กลูโคซามีน"], unit:"mg", maxDaily:1500,
+    note:"Glucosamine >1500 mg/วัน — อาจเพิ่ม insulin resistance และ INR ร่วม warfarin; ระวังใน CKD" },
+  { keys:["selenium","ซีลีเนียม"], unit:"mcg", maxDaily:400,
+    note:"Selenium >400 mcg/วัน → selenosis (toxic); ไม่ควรเสริมถ้าได้จากอาหารพอ" },
+  { keys:["green tea","ชาเขียว","egcg","แคทีชิน"], unit:"mg", maxDaily:800,
+    note:"Green tea extract (EGCG) >800 mg/วัน → hepatotoxicity; oxalate→นิ่ว; ระวังร่วม warfarin" },
 ];
 
 // maxDailyHerbFor(name) → { max, unit, note } | null

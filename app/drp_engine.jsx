@@ -406,6 +406,21 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage }) {
     const sameAsRx = m.sameAsPrescribed !== false; // default: กินตามสั่ง
     const actual = sameAsRx ? presc : dailyDoseMg(m.strength, m.actualQty, m.actualFreq, m.actuallyTaking);
 
+    // renal cap = 0 → ห้ามใช้ยานี้ที่ eGFR ปัจจุบัน (ยกเว้นที่ถูกฟ้องโดยกฎ contra/nephrotoxic แล้ว)
+    if (maxInfo && maxInfo.renal && maxInfo.max === 0) {
+      const alreadyFlagged = findings.some((fd) =>
+        (fd.drpKey === DRPK.contra || fd.drpKey === DRPK.renal || fd.drpKey === DRPK.nephrotoxic) &&
+        (fd.drugs || []).some((dn) => dm(dn, m.drug) || dm(m.drug, dn)));
+      if (!alreadyFlagged) {
+        addFinding({
+          sev: SEV.HIGH,
+          msg: `⚠️ ${m.drug} — ไม่ควรใช้ที่ eGFR=${egfr} (ขนาดที่ปรับตามไตแล้ว = ห้ามใช้)`,
+          rec: `หยุดยาหรือเปลี่ยนเป็นยาที่ปลอดภัยกว่าใน CKD ระยะนี้; ปรึกษาแพทย์`,
+          drpKey: DRPK.contra, drugs: [m.drug], id: "renalavoid_" + m.drug,
+        });
+      }
+    }
+
     // ตรวจขนาดสั่งเกิน max
     if (maxInfo && maxInfo.max > 0 && !isNaN(presc) && presc > maxInfo.max + 0.001) {
       const overByEgfr = maxInfo.renal;
