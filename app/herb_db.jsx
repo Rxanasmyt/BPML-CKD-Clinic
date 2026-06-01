@@ -132,4 +132,35 @@ function lookupHerb(name) {
          HERB_DB.find((h) => h.name.toLowerCase().includes(n) || n.includes(h.name.toLowerCase().split(" ")[0])) || null;
 }
 
-Object.assign(window, { HERB_DB, HERB_TYPE_LABEL, lookupHerb });
+/* =========================================================================
+   HERB_DOSING — ขนาดสูงสุดต่อวันของอาหารเสริมที่สำคัญใน CKD
+   match แบบ keyword (ชื่อสมุนไพร/อาหารเสริมมักยาว) → ตรวจขนาดรวมเกิน
+   อ้างอิง: KDOQI, NKF, WHO monographs, UpToDate (CKD supplement safety)
+   ========================================================================= */
+const HERB_DOSING = [
+  { keys:["vitamin c","วิตามิน ซี","วิตามินซี","ascorbic"], unit:"mg", maxDaily:500,
+    note:"Vitamin C >500 mg/วัน ใน CKD → oxalate สะสม → oxalate nephropathy" },
+  { keys:["magnesium","แมกนีเซียม"], unit:"mg", maxDaily:0,
+    note:"⚠️ AVOID Magnesium supplement ใน CKD (eGFR<30) — hypermagnesemia" },
+  { keys:["fish oil","น้ำมันปลา","omega","โอเมก้า"], unit:"mg", maxDaily:2000,
+    note:"Fish oil/Omega-3 >2 g/วัน + ยาต้านการแข็งตัวเลือด → เสี่ยงเลือดออก" },
+  { keys:["potassium","โพแทสเซียม"], unit:"mg", maxDaily:0,
+    note:"⚠️ AVOID K⁺ supplement ใน CKD ที่มีแนวโน้ม hyperkalemia" },
+  { keys:["vitamin d","วิตามิน ดี","cholecalciferol","vit d"], unit:"IU", maxDaily:4000,
+    note:"Vitamin D >4000 IU/วัน → hypercalcemia; ติดตาม Ca, 25-OH Vit D" },
+  { keys:["calcium","แคลเซียม"], unit:"mg", maxDaily:2000,
+    note:"Calcium รวม (อาหาร+เสริม) >2000 mg/วัน → vascular calcification ใน CKD" },
+  { keys:["zinc","สังกะสี"], unit:"mg", maxDaily:40,
+    note:"Zinc >40 mg/วัน → copper deficiency; ระวังใน CKD" },
+  { keys:["vitamin a","วิตามิน เอ","retinol"], unit:"IU", maxDaily:3000,
+    note:"⚠️ Vitamin A สะสมใน CKD → toxicity; หลีกเลี่ยงการเสริม" },
+];
+
+// maxDailyHerbFor(name) → { max, unit, note } | null
+function maxDailyHerbFor(name) {
+  if (!name) return null;
+  const n = name.toLowerCase();
+  return HERB_DOSING.find((d) => d.keys.some((k) => n.includes(k))) || null;
+}
+
+Object.assign(window, { HERB_DB, HERB_TYPE_LABEL, lookupHerb, HERB_DOSING, maxDailyHerbFor });

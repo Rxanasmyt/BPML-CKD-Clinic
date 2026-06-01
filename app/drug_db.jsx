@@ -335,4 +335,66 @@ function lookupDrug(name) {
          DRUG_DB.find((d) => d.name.toLowerCase().startsWith(n)) || null;
 }
 
-Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug });
+/* =========================================================================
+   DRUG_DOSING — ขนาดยาสูงสุดต่อวัน (ปรับตาม eGFR) สำหรับตรวจ "ขนาดรวมเกิน"
+   อ้างอิง: KDIGO 2024, Lexicomp Renal Dosing, Thai NLEM, UpToDate
+   โครงสร้าง:
+     unit       — หน่วยของ strength (mg / mcg / IU / g)
+     maxDaily   — ขนาดสูงสุดต่อวันปกติ (ไม่คิด CKD)
+     renalMax   — ขนาดสูงสุดที่ปรับตาม eGFR; เรียงจาก eGFR สูง→ต่ำ
+                  ระบบจะเลือก tier แรกที่ egfr >= tier.egfr
+                  max=0 หมายถึง "ห้ามใช้ที่ eGFR นี้"
+   หมายเหตุ: ใช้ชื่อ key ตรงกับ d.name ใน DRUG_DB
+   ========================================================================= */
+const DRUG_DOSING = {
+  "Metformin":        { unit:"mg", maxDaily:2550, renalMax:[{egfr:45,max:2000},{egfr:30,max:1000},{egfr:0,max:0}] },
+  "Allopurinol":      { unit:"mg", maxDaily:800,  renalMax:[{egfr:60,max:300},{egfr:30,max:200},{egfr:0,max:100}] },
+  "Gabapentin":       { unit:"mg", maxDaily:3600, renalMax:[{egfr:60,max:3600},{egfr:30,max:1400},{egfr:15,max:700},{egfr:0,max:300}] },
+  "Pregabalin":       { unit:"mg", maxDaily:600,  renalMax:[{egfr:60,max:600},{egfr:30,max:300},{egfr:15,max:150},{egfr:0,max:75}] },
+  "Atenolol":         { unit:"mg", maxDaily:100,  renalMax:[{egfr:35,max:100},{egfr:15,max:50},{egfr:0,max:25}] },
+  "Bisoprolol":       { unit:"mg", maxDaily:10,   renalMax:[{egfr:20,max:10},{egfr:0,max:5}] },
+  "Rosuvastatin":     { unit:"mg", maxDaily:40,   renalMax:[{egfr:30,max:40},{egfr:0,max:10}] },
+  "Pravastatin":      { unit:"mg", maxDaily:80,   renalMax:[{egfr:30,max:80},{egfr:0,max:20}] },
+  "Pitavastatin":     { unit:"mg", maxDaily:4,    renalMax:[{egfr:30,max:4},{egfr:0,max:2}] },
+  "Simvastatin":      { unit:"mg", maxDaily:40 },
+  "Atorvastatin":     { unit:"mg", maxDaily:80 },
+  "Colchicine":       { unit:"mg", maxDaily:1.2,  renalMax:[{egfr:60,max:1.2},{egfr:30,max:0.6},{egfr:0,max:0}] },
+  "Tramadol":         { unit:"mg", maxDaily:400,  renalMax:[{egfr:30,max:200},{egfr:0,max:0}] },
+  "Sitagliptin":      { unit:"mg", maxDaily:100,  renalMax:[{egfr:45,max:100},{egfr:30,max:50},{egfr:0,max:25}] },
+  "Vildagliptin":     { unit:"mg", maxDaily:100,  renalMax:[{egfr:50,max:100},{egfr:0,max:50}] },
+  "Saxagliptin":      { unit:"mg", maxDaily:5,    renalMax:[{egfr:45,max:5},{egfr:0,max:2.5}] },
+  "Glipizide":        { unit:"mg", maxDaily:20 },
+  "Gliclazide":       { unit:"mg", maxDaily:120 },
+  "Glibenclamide":    { unit:"mg", maxDaily:20,   renalMax:[{egfr:60,max:10},{egfr:0,max:0}] },
+  "Paracetamol (Acetaminophen)": { unit:"mg", maxDaily:4000, renalMax:[{egfr:999,max:3000}] },
+  "Amlodipine":       { unit:"mg", maxDaily:10 },
+  "Enalapril":        { unit:"mg", maxDaily:40,   renalMax:[{egfr:30,max:40},{egfr:0,max:20}] },
+  "Ramipril":         { unit:"mg", maxDaily:10,   renalMax:[{egfr:30,max:10},{egfr:0,max:5}] },
+  "Lisinopril":       { unit:"mg", maxDaily:40,   renalMax:[{egfr:30,max:40},{egfr:0,max:10}] },
+  "Losartan":         { unit:"mg", maxDaily:100 },
+  "Spironolactone":   { unit:"mg", maxDaily:100,  renalMax:[{egfr:30,max:50},{egfr:0,max:0}] },
+  "Hydrochlorothiazide": { unit:"mg", maxDaily:50, renalMax:[{egfr:30,max:50},{egfr:0,max:0}] },
+  "Furosemide":       { unit:"mg", maxDaily:600 },
+  "Digoxin":          { unit:"mg", maxDaily:0.25, renalMax:[{egfr:50,max:0.25},{egfr:30,max:0.125},{egfr:0,max:0.0625}] },
+  "Amoxicillin":      { unit:"mg", maxDaily:3000, renalMax:[{egfr:30,max:1500},{egfr:10,max:750},{egfr:0,max:500}] },
+  "Ciprofloxacin":    { unit:"mg", maxDaily:1500, renalMax:[{egfr:30,max:1000},{egfr:0,max:500}] },
+  "Levofloxacin":     { unit:"mg", maxDaily:750,  renalMax:[{egfr:50,max:750},{egfr:20,max:250},{egfr:0,max:250}] },
+};
+
+// maxDailyDoseFor(name, egfr) → { max:number, renal:bool } | null
+function maxDailyDoseFor(name, egfr) {
+  const info = lookupDrug(name);
+  const key = info ? info.name : name;
+  const d = DRUG_DOSING[key];
+  if (!d) return null;
+  const eg = parseFloat(egfr);
+  if (!isNaN(eg) && Array.isArray(d.renalMax)) {
+    for (const tier of d.renalMax) {
+      if (eg >= tier.egfr) return { max: tier.max, renal: true, unit: d.unit };
+    }
+  }
+  if (d.maxDaily != null) return { max: d.maxDaily, renal: false, unit: d.unit };
+  return null;
+}
+
+Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug, DRUG_DOSING, maxDailyDoseFor });

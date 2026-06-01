@@ -29,6 +29,7 @@ const DRP_OPTIONS = [
   { key: "electrolyte", th: "เสี่ยงเกลือแร่ผิดปกติ", en: "Electrolyte-related risk" },
   { key: "ddi", th: "Drug–drug interaction", en: "Drug–drug interaction" },
   { key: "adherence", th: "ปัญหาการกินยา", en: "Adherence problem" },
+  { key: "overdose", th: "ขนาดรวมเกินขนาด", en: "Dose exceeds maximum" },
 ];
 
 const INTERVENTION_OPTIONS = [
@@ -61,7 +62,8 @@ function computeRisk(r) {
   if (drps.includes("nephrotoxic")) { s += 2; f.push({ t: "ใช้ยา Nephrotoxic", w: 2 }); }
   if (drps.includes("electrolyte")) { s += 1; f.push({ t: "เสี่ยงเกลือแร่ผิดปกติ", w: 1 }); }
   if (drps.includes("adherence")) { s += 1; f.push({ t: "ปัญหาการกินยา", w: 1 }); }
-  const otherDrp = drps.filter((d) => !["contra", "nephrotoxic", "electrolyte", "adherence"].includes(d)).length;
+  if (drps.includes("overdose")) { s += 2; f.push({ t: "ขนาดยารวมเกินขนาด", w: 2 }); }
+  const otherDrp = drps.filter((d) => !["contra", "nephrotoxic", "electrolyte", "adherence", "overdose"].includes(d)).length;
   if (otherDrp >= 2) { s += 2; f.push({ t: `พบ DRP ${drps.length} ข้อ`, w: 2 }); }
   else if (otherDrp === 1) { s += 1; f.push({ t: "พบ DRP", w: 1 }); }
 

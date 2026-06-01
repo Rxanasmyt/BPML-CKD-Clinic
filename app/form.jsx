@@ -398,7 +398,7 @@ function DoseBuilder({ value, onChange }) {
 }
 
 /* ---------- แบบฟอร์มหลัก ---------- */
-function blankMed() { return { drug: "", strength: "", dose: "", actuallyTaking: "", source: "", remark: "", flags: [] }; }
+function blankMed() { return { drug: "", strength: "", dose: "", qtyPerDose: "", freqPerDay: "", timing: "", sameAsPrescribed: true, actualQty: "", actualFreq: "", actuallyTaking: "", source: "", remark: "", flags: [] }; }
 
 function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [f, setF] = React.useState(() => initial ? JSON.parse(JSON.stringify(initial)) : {
@@ -505,6 +505,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   }, []);
 
   const setMed = (i, k, v) => setF((p) => { const m = [...p.meds]; m[i] = { ...m[i], [k]: v }; return { ...p, meds: m }; });
+  const setMedFields = (i, obj) => setF((p) => { const m = [...p.meds]; m[i] = { ...m[i], ...obj }; return { ...p, meds: m }; });
   const addMed = () => setF((p) => ({ ...p, meds: [...p.meds, blankMed()] }));
   const addDrugFromSearch = (d) => {
     RecentDrugs.record(d.name);
@@ -826,7 +827,8 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
               {f.meds.map((m, i) => (
                 <MedCard
-                  key={i} i={i} m={m} setMed={setMed}
+                  key={i} i={i} m={m} setMed={setMed} setMedFields={setMedFields}
+                  egfr={f.egfr}
                   del={() => delMed(i)}
                   allergyConflict={allergyConflicts[i]}
                 />
@@ -1137,8 +1139,135 @@ function MedSearchAdd({ onAdd, onAddBlank, existing }) {
   );
 }
 
+/* ---------- Structured dose entry ---------- */
+const QTY_OPTS = [0.5, 1, 1.5, 2, 3];
+const FREQ_DAY_OPTS = [1, 2, 3, 4];
+const TIMING_OPTS = [["pc", "หลังอาหาร"], ["ac", "ก่อนอาหาร"], ["hs", "ก่อนนอน"], ["prn", "เมื่อมีอาการ"], ["เช้า", "เช้า"], ["เย็น", "เย็น"]];
+
+function buildDoseStr(qty, freq, timing) {
+  const q = parseFloat(qty), fr = parseFloat(freq);
+  if (!q || !fr) return timing || "";
+  return `${q}x${fr}${timing ? " " + timing : ""}`;
+}
+
+function unitOfStrength(strength, maxInfo) {
+  if (maxInfo && maxInfo.unit) return maxInfo.unit;
+  const m = String(strength || "").match(/(mcg|mg|g|IU|ml)/i);
+  return m ? m[1] : "mg";
+}
+
+// DoseInput — quick qty × freq + timing picker; writes structured fields + display string
+function DoseInput({ m, onChange, qtyKey = "qtyPerDose", freqKey = "freqPerDay", timingKey = "timing", doseKey = "dose", compact }) {
+  const qty = m[qtyKey], freq = m[freqKey], timing = m[timingKey];
+  const looksStructured = (qty && freq) || /\d+(?:\.\d+)?\s*[xX×]\s*\d/.test(m[doseKey] || "");
+  const [freeMode, setFreeMode] = React.useState(() => !!(m[doseKey] && !looksStructured));
+
+  function update(part) {
+    const q = part.qty !== undefined ? part.qty : qty;
+    const fr = part.freq !== undefined ? part.freq : freq;
+    const tm = part.timing !== undefined ? part.timing : timing;
+    onChange({ [qtyKey]: q, [freqKey]: fr, [timingKey]: tm, [doseKey]: buildDoseStr(q, fr, tm) });
+  }
+
+  if (freeMode) {
+    return (
+      <div style={{ display: "flex", gap: 4 }}>
+        <input style={{ ...inS, flex: 1 }} value={m[doseKey] || ""}
+          onChange={(e) => onChange({ [doseKey]: e.target.value })}
+          placeholder="เช่น ตามแพทย์สั่ง, ค่อยๆ ลดขนาด…" />
+        <button type="button" onClick={() => setFreeMode(false)} title="กลับไปเลือกแบบเร็ว"
+          style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface)", cursor: "pointer", padding: "0 9px", color: "var(--brand-deep)", fontSize: 11, whiteSpace: "nowrap" }}>เลือก</button>
+      </div>
+    );
+  }
+
+  const chip = (on, c) => ({ padding: "6px 11px", borderRadius: 7, border: `1.5px solid ${on ? c : "var(--border)"}`, background: on ? c : "var(--surface)", color: on ? "#fff" : "var(--ink-2)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--mono)" });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 600 }}>เม็ด/ครั้ง</span>
+        {QTY_OPTS.map((q) => (
+          <button key={q} type="button" onClick={() => update({ qty: q })} style={chip(parseFloat(qty) === q, "var(--brand)")}>{q}</button>
+        ))}
+        <input value={qty && !QTY_OPTS.includes(parseFloat(qty)) ? qty : ""} onChange={(e) => update({ qty: e.target.value })}
+          inputMode="decimal" placeholder="อื่น ๆ"
+          style={{ width: 56, padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 7, fontSize: 12.5, fontFamily: "var(--mono)", textAlign: "center", background: "var(--surface)", color: "var(--ink)", outline: "none" }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 600 }}>× ครั้ง/วัน</span>
+        {FREQ_DAY_OPTS.map((fr) => (
+          <button key={fr} type="button" onClick={() => update({ freq: fr })} style={chip(parseFloat(freq) === fr, "var(--brand-deep)")}>{fr}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {TIMING_OPTS.map(([v, t]) => (
+          <button key={v} type="button" onClick={() => update({ timing: v === timing ? "" : v })}
+            style={{ padding: "5px 9px", borderRadius: 7, border: `1px solid ${timing === v ? "var(--accent)" : "var(--border)"}`, background: timing === v ? "var(--brand-soft)" : "var(--surface)", color: timing === v ? "var(--brand-deep)" : "var(--ink-2)", fontSize: 11.5, cursor: "pointer" }}>{v} <span style={{ opacity: .65 }}>{t}</span></button>
+        ))}
+        <button type="button" onClick={() => setFreeMode(true)} title="พิมพ์เอง"
+          style={{ padding: "5px 8px", borderRadius: 7, border: "1px dashed var(--border)", background: "var(--surface)", color: "var(--ink-2)", fontSize: 11, cursor: "pointer", marginLeft: "auto" }}>✏️ พิมพ์เอง</button>
+      </div>
+    </div>
+  );
+}
+
+// DailyDoseReadout — live total mg/day + overdose warning
+function DailyDoseReadout({ drug, strength, qty, freq, dose, egfr, label = "ขนาดรวม" }) {
+  const daily = (typeof window.dailyDoseMg === "function") ? window.dailyDoseMg(strength, qty, freq, dose) : NaN;
+  if (isNaN(daily) || daily <= 0) return null;
+  const maxInfo = (typeof window.maxDailyDoseFor === "function") ? window.maxDailyDoseFor(drug, egfr) : null;
+  const unit = unitOfStrength(strength, maxInfo);
+  const over = maxInfo && maxInfo.max > 0 && daily > maxInfo.max + 0.001;
+  const dispDaily = Math.round(daily * 100) / 100;
+  return (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 8,
+        background: over ? "#fef2f2" : "var(--brand-soft)", border: `1px solid ${over ? "#fca5a5" : "color-mix(in srgb,var(--brand) 30%,transparent)"}`,
+        color: over ? "#b91c1c" : "var(--brand-deep)", fontSize: 12.5, fontWeight: 700, fontFamily: "var(--mono)" }}>
+        {over ? "⚠️" : "Σ"} {label} {dispDaily} {unit}/วัน
+      </span>
+      {maxInfo && maxInfo.max > 0 && (
+        <span style={{ fontSize: 11.5, color: over ? "#b91c1c" : "var(--ink-2)", fontWeight: over ? 700 : 500 }}>
+          {over
+            ? `เกินขนาดสูงสุด ${maxInfo.renal ? `(eGFR ${egfr})` : ""} ${Math.round(maxInfo.max * 100) / 100} ${unit}/วัน`
+            : `สูงสุด ${maxInfo.renal ? `(eGFR ${egfr})` : ""} ${Math.round(maxInfo.max * 100) / 100} ${unit}/วัน`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ActualIntake — what the patient really takes (drives adherence + actual-overdose DRP)
+function ActualIntake({ m, onChange, drug, strength, egfr }) {
+  const same = m.sameAsPrescribed !== false;
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ink)" }}>ผู้ป่วยกินจริง</span>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button type="button"
+            onClick={() => onChange({ sameAsPrescribed: true, actualQty: "", actualFreq: "", actuallyTaking: "" })}
+            style={segBtn(same, false)}>กินตามที่สั่ง</button>
+          <button type="button"
+            onClick={() => onChange({ sameAsPrescribed: false })}
+            style={segBtn(!same, true)}>กินต่างจากสั่ง</button>
+        </div>
+      </div>
+      {!same && (
+        <div style={{ marginTop: 8 }}>
+          <DoseInput m={m} onChange={onChange}
+            qtyKey="actualQty" freqKey="actualFreq" timingKey="actualTiming" doseKey="actuallyTaking" />
+          <DailyDoseReadout drug={drug} strength={strength}
+            qty={m.actualQty} freq={m.actualFreq} dose={m.actuallyTaking} egfr={egfr} label="กินจริงรวม" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- MedCard — compact, clear medication card ---------- */
-function MedCard({ i, m, setMed, del, allergyConflict }) {
+function MedCard({ i, m, setMed, setMedFields, egfr, del, allergyConflict }) {
   const info = lookupDrug(m.drug);
   const hasConflict = allergyConflict && allergyConflict.conflict;
   const danger = (m.flags || []).includes("contra") || (m.flags || []).includes("nephrotoxic");
@@ -1171,20 +1300,25 @@ function MedCard({ i, m, setMed, del, allergyConflict }) {
           <button type="button" onClick={del} title="ลบรายการนี้" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, flexShrink: 0 }}><Icon name="x" size={17} /></button>
         </div>
 
-        {/* Body — strength / dose / actually-taking */}
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap", paddingLeft: 33 }}>
-          <div style={{ flex: "0 0 140px" }}>
-            <MiniLabel>ความแรง</MiniLabel>
-            <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
+        {/* Body — strength + structured dose */}
+        <div style={{ paddingLeft: 33 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "0 0 150px" }}>
+              <MiniLabel>ความแรง</MiniLabel>
+              <StrengthPicker drug={m.drug} value={m.strength} onChange={(v) => setMed(i, "strength", v)} />
+            </div>
+            <div style={{ flex: "1 1 280px" }}>
+              <MiniLabel>ขนาด/วิธีใช้ (แพทย์สั่ง)</MiniLabel>
+              <DoseInput m={m} onChange={(obj) => setMedFields(i, obj)} />
+            </div>
           </div>
-          <div style={{ flex: "1.6 1 160px" }}>
-            <MiniLabel>ขนาด/วิธีใช้</MiniLabel>
-            <DoseBuilder value={m.dose} onChange={(v) => setMed(i, "dose", v)} />
-          </div>
-          <div style={{ flex: "1.2 1 130px" }}>
-            <MiniLabel>ผู้ป่วยกินจริง</MiniLabel>
-            <input style={inS} value={m.actuallyTaking} onChange={(e) => setMed(i, "actuallyTaking", e.target.value)} placeholder="ตามสั่ง / ระบุ" />
-          </div>
+
+          {/* live total daily dose readout + overdose warning */}
+          <DailyDoseReadout drug={m.drug} strength={m.strength}
+            qty={m.qtyPerDose} freq={m.freqPerDay} dose={m.dose} egfr={egfr} />
+
+          {/* actual intake */}
+          <ActualIntake m={m} onChange={(obj) => setMedFields(i, obj)} drug={m.drug} strength={m.strength} egfr={egfr} />
         </div>
 
         {m.flags && m.flags.length > 0 && (
@@ -1286,6 +1420,28 @@ const HERB_FLAG_INFO = {
   glucose:     { emoji: "🩸", label: "น้ำตาล" },
 };
 
+// HerbDoseHint — inline overdose/AVOID warning for supplements with known max
+function HerbDoseHint({ name, dose }) {
+  const hd = (typeof window.maxDailyHerbFor === "function") ? window.maxDailyHerbFor(name) : null;
+  if (!hd) return null;
+  const numM = String(dose || "").match(/(\d+(?:\.\d+)?)/);
+  const amt = numM ? parseFloat(numM[1]) : NaN;
+  const freqM = String(dose || "").match(/[xX×]\s*(\d+(?:\.\d+)?)/);
+  const fr = freqM ? parseFloat(freqM[1]) : 1;
+  const daily = isNaN(amt) ? NaN : amt * fr;
+  const avoid = hd.maxDaily === 0;
+  const over = !avoid && !isNaN(daily) && daily > hd.maxDaily + 0.001;
+  if (!avoid && !over) {
+    if (hd.maxDaily > 0) return <div style={{ marginTop: 4, fontSize: 10.5, color: "var(--ink-2)" }}>สูงสุด {hd.maxDaily} {hd.unit}/วัน</div>;
+    return null;
+  }
+  return (
+    <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#b91c1c", lineHeight: 1.4 }}>
+      ⚠️ {avoid ? "ควรหลีกเลี่ยงใน CKD" : `เกินขนาดสูงสุด (${hd.maxDaily} ${hd.unit}/วัน)`}
+    </div>
+  );
+}
+
 function HerbOtcSection({ items, onChange }) {
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState([]);
@@ -1315,6 +1471,7 @@ function HerbOtcSection({ items, onChange }) {
 
   function removeItem(name) { onChange(items.filter((x) => x.name !== name)); }
   function toggleNote(name) { setExpandedNotes((p) => ({ ...p, [name]: !p[name] })); }
+  function setItemDose(name, dose) { onChange(items.map((x) => x.name === name ? { ...x, dose } : x)); }
 
   return (
     <div style={{ marginTop: 14 }}>
@@ -1360,7 +1517,7 @@ function HerbOtcSection({ items, onChange }) {
             const ti = HERB_TYPE_INFO[item.type] || HERB_TYPE_INFO.herb;
             const noteOpen = expandedNotes[item.name];
             return (
-              <div key={item.name} style={{ border: `1px solid ${ti.border}`, borderRadius: 10, background: ti.bg, padding: "8px 10px", maxWidth: 280 }}>
+              <div key={item.name} style={{ border: `1px solid ${ti.border}`, borderRadius: 10, background: ti.bg, padding: "8px 10px", width: 300 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 6px", borderRadius: 5, background: "rgba(255,255,255,.6)", color: ti.color }}>{ti.emoji} {ti.label}</span>
                   {item.custom && <span style={{ fontSize: 10, color: "var(--ink-2)", fontStyle: "italic" }}>custom</span>}
@@ -1373,6 +1530,13 @@ function HerbOtcSection({ items, onChange }) {
                     </button>
                   )}
                   <button type="button" onClick={() => removeItem(item.name)} style={{ border: "none", background: "none", cursor: "pointer", padding: "0 2px" }}><Icon name="x" size={14} color={ti.color} /></button>
+                </div>
+                {/* amount / วิธีกิน + overdose check */}
+                <div style={{ marginTop: 7 }}>
+                  <input value={item.dose || ""} onChange={(e) => setItemDose(item.name, e.target.value)}
+                    placeholder="ปริมาณ/วิธีกิน เช่น 1000 mg x2, 1 แก้ว/วัน…"
+                    style={{ width: "100%", padding: "6px 9px", border: `1px solid ${ti.border}`, borderRadius: 7, fontSize: 12, fontFamily: "var(--sans)", background: "rgba(255,255,255,.7)", color: "var(--ink)", outline: "none", boxSizing: "border-box" }} />
+                  <HerbDoseHint name={item.name} dose={item.dose} />
                 </div>
                 {noteOpen && item.ckdNote && (
                   <div style={{ marginTop: 6, fontSize: 12, color: ti.color, lineHeight: 1.45, paddingTop: 6, borderTop: `1px solid ${ti.border}` }}>{item.ckdNote}</div>

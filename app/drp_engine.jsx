@@ -9,8 +9,41 @@ const SEV = { HIGH: "HIGH", MED: "MEDIUM", LOW: "LOW" };
 const DRPK = {
   duplicate: "duplicate", omission: "omission", renal: "renal_dose",
   contra: "contra", nephrotoxic: "nephrotoxic", electrolyte: "electrolyte",
-  ddi: "ddi", adherence: "adherence",
+  ddi: "ddi", adherence: "adherence", overdose: "overdose",
 };
+
+/* ---------- Dose parsing helpers ---------- */
+// parseStrengthMg("850 mg") → 850 ; "0.25 mg" → 0.25 ; "" → NaN
+function parseStrengthNum(s) {
+  if (!s) return NaN;
+  const m = String(s).match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : NaN;
+}
+
+// unitsPerDay from structured qty×freq, else parse "1x2" pattern from string
+function unitsPerDayOf(qtyPerDose, freqPerDay, doseString) {
+  const q = parseFloat(qtyPerDose), fr = parseFloat(freqPerDay);
+  if (!isNaN(q) && !isNaN(fr) && q > 0 && fr > 0) return q * fr;
+  // fallback: parse "NxM" / "N x M" (N = เม็ด/ครั้ง, M = ครั้ง/วัน)
+  if (doseString) {
+    const m = String(doseString).match(/(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
+    if (m) return parseFloat(m[1]) * parseFloat(m[2]);
+  }
+  return NaN;
+}
+
+// total mg/day for a med given strength + dose pattern
+function dailyDoseMg(strength, qtyPerDose, freqPerDay, doseString) {
+  const mgPerUnit = parseStrengthNum(strength);
+  const upd = unitsPerDayOf(qtyPerDose, freqPerDay, doseString);
+  if (isNaN(mgPerUnit) || isNaN(upd)) return NaN;
+  return Math.round(mgPerUnit * upd * 10000) / 10000;
+}
+
+function fmtDose(n) {
+  if (isNaN(n)) return "?";
+  return (Math.round(n * 100) / 100).toString();
+}
 
 /* ---------- Drug class matcher ---------- */
 // classOf(drugName) → lowercase class string from DRUG_DB or HERB_DB
@@ -361,6 +394,85 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage }) {
     }
   });
 
+  // 2b. ขนาดรวมเกิน (total daily dose) + ผู้ป่วยกินจริงต่างจากสั่ง (adherence)
+  meds.forEach((m) => {
+    if (!m.drug || !m.drug.trim()) return;
+    const maxInfo = (typeof maxDailyDoseFor === "function") ? maxDailyDoseFor(m.drug, egfr) : null;
+
+    // ขนาดที่แพทย์สั่ง
+    const presc = dailyDoseMg(m.strength, m.qtyPerDose, m.freqPerDay, m.dose);
+
+    // ขนาดที่ผู้ป่วยกินจริง (ถ้ามีข้อมูลแยก)
+    const sameAsRx = m.sameAsPrescribed !== false; // default: กินตามสั่ง
+    const actual = sameAsRx ? presc : dailyDoseMg(m.strength, m.actualQty, m.actualFreq, m.actuallyTaking);
+
+    // ตรวจขนาดสั่งเกิน max
+    if (maxInfo && maxInfo.max > 0 && !isNaN(presc) && presc > maxInfo.max + 0.001) {
+      const overByEgfr = maxInfo.renal;
+      addFinding({
+        sev: overByEgfr ? SEV.HIGH : SEV.MED,
+        msg: `⚠️ ${m.drug} ${m.strength || ""} ขนาดรวม ${fmtDose(presc)} ${maxInfo.unit}/วัน เกินขนาดสูงสุด${overByEgfr ? ` ที่ปรับตาม eGFR=${egfr}` : ""} (${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน)`,
+        rec: overByEgfr
+          ? `ลดขนาดยาให้ ≤${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน ตามการทำงานของไต หรือปรึกษาแพทย์`
+          : `ทบทวนขนาดยา; ลดให้ ≤${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน`,
+        drpKey: DRPK.overdose, drugs: [m.drug], id: "overdose_rx_" + m.drug,
+      });
+    }
+
+    // ตรวจขนาดที่กินจริงเกิน max (กรณีกินจริงต่างจากสั่ง)
+    if (maxInfo && maxInfo.max > 0 && !sameAsRx && !isNaN(actual) && actual > maxInfo.max + 0.001) {
+      addFinding({
+        sev: SEV.HIGH,
+        msg: `⚠️ ${m.drug}: ผู้ป่วยกินจริง ${fmtDose(actual)} ${maxInfo.unit}/วัน เกินขนาดสูงสุด (${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน) — เสี่ยงพิษจากยา`,
+        rec: `ทบทวนพฤติกรรมการกินยา; ให้คำแนะนำผู้ป่วย; แจ้งแพทย์`,
+        drpKey: DRPK.overdose, drugs: [m.drug], id: "overdose_actual_" + m.drug,
+      });
+    }
+
+    // ตรวจกินจริงต่างจากสั่ง (adherence / discrepancy)
+    if (!sameAsRx && !isNaN(presc) && !isNaN(actual) && Math.abs(actual - presc) > 0.001) {
+      const more = actual > presc;
+      addFinding({
+        sev: SEV.MED,
+        msg: `${m.drug}: ผู้ป่วยกินจริง ${fmtDose(actual)} ${maxInfo ? maxInfo.unit : "mg"}/วัน ${more ? "มากกว่า" : "น้อยกว่า"}ที่แพทย์สั่ง (${fmtDose(presc)})`,
+        rec: more
+          ? `ผู้ป่วยกินเกินคำสั่ง — ประเมินสาเหตุ (เข้าใจผิด/อาการไม่ดีขึ้น); ให้คำแนะนำ`
+          : `ผู้ป่วยกินไม่ครบตามสั่ง — ประเมิน adherence (ลืม/กลัวผลข้างเคียง/ราคา); ให้คำแนะนำ`,
+        drpKey: DRPK.adherence, drugs: [m.drug], id: "adherence_" + m.drug,
+      });
+    }
+  });
+
+  // 2c. ขนาดสมุนไพร/อาหารเสริมเกิน (supplement overdose)
+  otcItems.forEach((o) => {
+    if (!o.name) return;
+    const hd = (typeof maxDailyHerbFor === "function") ? maxDailyHerbFor(o.name) : null;
+    if (!hd) return;
+    // parse mg/day from free-text amount: "1000 mg x2" → 2000
+    const numM = String(o.dose || "").match(/(\d+(?:\.\d+)?)/);
+    const amt = numM ? parseFloat(numM[1]) : NaN;
+    const freqM = String(o.dose || "").match(/[xX×]\s*(\d+(?:\.\d+)?)/);
+    const fr = freqM ? parseFloat(freqM[1]) : 1;
+    const daily = isNaN(amt) ? NaN : amt * fr;
+
+    if (hd.maxDaily === 0) {
+      // ห้ามใช้ใน CKD ไม่ว่าขนาดเท่าไร
+      addFinding({
+        sev: SEV.HIGH,
+        msg: `⚠️ ${o.name}${o.dose ? ` (${o.dose})` : ""} — ${hd.note}`,
+        rec: `หลีกเลี่ยงใน CKD; แนะนำผู้ป่วยให้หยุด; ปรึกษาแพทย์`,
+        drpKey: DRPK.overdose, drugs: [o.name], id: "herb_avoid_" + o.name,
+      });
+    } else if (!isNaN(daily) && daily > hd.maxDaily + 0.001) {
+      addFinding({
+        sev: SEV.HIGH,
+        msg: `⚠️ ${o.name}: ${fmtDose(daily)} ${hd.unit}/วัน เกินขนาดสูงสุด (${fmtDose(hd.maxDaily)} ${hd.unit}/วัน) — ${hd.note}`,
+        rec: `ลดขนาดให้ ≤${fmtDose(hd.maxDaily)} ${hd.unit}/วัน หรือหยุด; ให้คำแนะนำผู้ป่วย`,
+        drpKey: DRPK.overdose, drugs: [o.name], id: "herb_overdose_" + o.name,
+      });
+    }
+  });
+
   // 3. DDI rules — test every drug pair
   for (let i = 0; i < allDrugs.length; i++) {
     for (let j = i + 1; j < allDrugs.length; j++) {
@@ -407,4 +519,4 @@ const DRP_SEV_META = {
   LOW:    { color:"#1d4ed8", bg:"#eff6ff", border:"#bfdbfe", label:"แจ้งเตือน" },
 };
 
-Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK });
+Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose });
