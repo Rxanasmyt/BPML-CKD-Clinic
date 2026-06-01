@@ -619,4 +619,65 @@ const DRP_SEV_META = {
   LOW:    { color:"#1d4ed8", bg:"#eff6ff", border:"#bfdbfe", label:"แจ้งเตือน" },
 };
 
-Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose });
+/* =========================================================================
+   generateCounselingNote — สังเคราะห์คำแนะนำผู้ป่วยภาษาไทยจากผล analyzeDRPs
+   รับ findings (จาก analyzeDRPs) → ข้อความ bullet พร้อมใช้ในช่อง counseling
+   ========================================================================= */
+function generateCounselingNote(findings = [], opts = {}) {
+  if (!Array.isArray(findings) || !findings.length) return "";
+  // จัดกลุ่มตามความรุนแรง แล้วแปลง rec เป็น bullet โดยตัดความซ้ำ
+  const order = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  const sorted = [...findings].sort((a, b) => (order[a.sev] || 2) - (order[b.sev] || 2));
+  const seen = new Set();
+  const lines = [];
+  sorted.forEach((f) => {
+    const text = (f.rec || f.msg || "").trim();
+    if (!text) return;
+    const key = text.slice(0, 40);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const drugTag = (f.drugs && f.drugs.length) ? `${f.drugs.join(" + ")}: ` : "";
+    const mark = f.sev === "HIGH" ? "• ⚠️ " : "• ";
+    lines.push(`${mark}${drugTag}${text}`);
+  });
+  if (!lines.length) return "";
+  const header = "📋 คำแนะนำสำหรับผู้ป่วย (สร้างอัตโนมัติ — โปรดทบทวนก่อนใช้)";
+  const footer = opts.followUp ? `\n• นัดติดตาม/ตรวจแล็บครั้งหน้า: ${opts.followUp}` : "";
+  return [header, ...lines].join("\n") + footer;
+}
+
+/* =========================================================================
+   diffMedLists — เปรียบเทียบรายการยา 2 นัด (prev → current)
+   คืน { added:[], stopped:[], changed:[{drug, from, to}], unchanged:n }
+   จับคู่ด้วยชื่อยา (case-insensitive, ผ่าน lookupDrug ถ้ามี)
+   ========================================================================= */
+function diffMedLists(prevMeds = [], curMeds = []) {
+  const norm = (n) => {
+    if (!n) return "";
+    const info = (typeof lookupDrug === "function") ? lookupDrug(n) : null;
+    return (info ? info.name : n).trim().toLowerCase();
+  };
+  const valid = (arr) => (arr || []).filter((m) => m && m.drug && m.drug.trim());
+  const prev = valid(prevMeds), cur = valid(curMeds);
+  const prevMap = new Map(), curMap = new Map();
+  prev.forEach((m) => prevMap.set(norm(m.drug), m));
+  cur.forEach((m) => curMap.set(norm(m.drug), m));
+
+  const added = [], stopped = [], changed = [];
+  let unchanged = 0;
+  cur.forEach((m) => {
+    const k = norm(m.drug);
+    if (!prevMap.has(k)) { added.push(m); return; }
+    const p = prevMap.get(k);
+    const ps = (p.strength || "").trim(), cs = (m.strength || "").trim();
+    const pd = (p.dose || `${p.qtyPerDose || ""}x${p.freqPerDay || ""}`).trim();
+    const cd = (m.dose || `${m.qtyPerDose || ""}x${m.freqPerDay || ""}`).trim();
+    if (ps !== cs || pd !== cd) {
+      changed.push({ drug: m.drug, from: `${ps} ${pd}`.trim(), to: `${cs} ${cd}`.trim() });
+    } else unchanged++;
+  });
+  prev.forEach((m) => { if (!curMap.has(norm(m.drug))) stopped.push(m); });
+  return { added, stopped, changed, unchanged };
+}
+
+Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose, generateCounselingNote, diffMedLists });

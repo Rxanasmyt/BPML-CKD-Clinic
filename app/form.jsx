@@ -405,7 +405,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     hn: "", name: "", age: "", sex: "male", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
     hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
     bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
-    meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "",
+    meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "", drpAcks: {},
     comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
     interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
     pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
@@ -888,6 +888,9 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         {/* DRP Auto-analysis panel */}
         <DrpAnalysisPanel meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} k={f.k} ckdStage={f.ckdStage}
           hb={f.hb} hco3={f.hco3} phos={f.phos} ca={f.ca} bpSys={f.bpSys} bpDia={f.bpDia} uacr={f.uacr} dm={f.dm}
+          acks={f.drpAcks || {}} user={user} counselingNote={f.counselingNote}
+          onAck={(fid, val) => setF((p) => { const a = { ...(p.drpAcks || {}) }; if (val) a[fid] = val; else delete a[fid]; return { ...p, drpAcks: a }; })}
+          onCounsel={(note) => setF((p) => ({ ...p, counselingNote: note, interventions: [...new Set([...(p.interventions || []), "counsel"])] }))}
           onApplyDrps={(keys) => setF((p) => ({ ...p, drps: [...new Set([...(p.drps || []), ...keys])] }))} />
 
         {/* ส่วนที่ 4 */}
@@ -914,6 +917,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         {/* ส่วนที่ 5 */}
         <div ref={el => sectionRefs.current['5'] = el}>
         <FSection n="5" title="Medication Reconciliation" en="การกระทบยอดรายการยา" open={openRecon} onToggle={() => setOpenRecon((o) => !o)}>
+          {prevVisits.length > 0 && <MedDiffPanel prev={prevVisits[0]} curMeds={f.meds} />}
           <Field label="เปรียบเทียบกับ (Compared)">
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
               <Check label="ใบสั่งยาเดิม (Previous order)" on={f.comparedPrev} onClick={() => set("comparedPrev", !f.comparedPrev)} />
@@ -1256,6 +1260,28 @@ function DoseInput({ m, onChange, qtyKey = "qtyPerDose", freqKey = "freqPerDay",
   );
 }
 
+// RenalDoseHint — แสดงขนาดสูงสุดที่ปรับตาม eGFR + คำแนะนำคลินิก (guidance ก่อนกรอกขนาด)
+function RenalDoseHint({ drug, egfr, info }) {
+  if (!drug || !drug.trim()) return null;
+  const maxInfo = (typeof window.maxDailyDoseFor === "function") ? window.maxDailyDoseFor(drug, egfr) : null;
+  const note = info && info.note;
+  if (!maxInfo && !note) return null;
+  const eg = parseFloat(egfr);
+  const avoid = maxInfo && maxInfo.renal && maxInfo.max === 0;
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4, padding: "7px 11px", borderRadius: 8, background: avoid ? "#fef2f2" : "var(--surface-2)", border: `1px solid ${avoid ? "#fca5a5" : "var(--border)"}` }}>
+      {maxInfo && (
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: avoid ? "#b91c1c" : "var(--brand-deep)" }}>
+          {avoid
+            ? `⛔ ไม่ควรใช้ที่ eGFR ${isNaN(eg) ? "?" : eg} (ปรับตามไตแล้ว = ห้ามใช้)`
+            : `💡 ขนาดสูงสุดแนะนำ${maxInfo.renal && !isNaN(eg) ? ` ที่ eGFR ${eg}` : ""}: ${Math.round(maxInfo.max * 100) / 100} ${maxInfo.unit}/วัน`}
+        </div>
+      )}
+      {note && <div style={{ fontSize: 11, color: "var(--ink-2)", lineHeight: 1.4 }}>{note}</div>}
+    </div>
+  );
+}
+
 // DailyDoseReadout — live total mg/day + overdose warning
 function DailyDoseReadout({ drug, strength, qty, freq, dose, egfr, label = "ขนาดรวม" }) {
   const daily = (typeof window.dailyDoseMg === "function") ? window.dailyDoseMg(strength, qty, freq, dose) : NaN;
@@ -1356,6 +1382,9 @@ function MedCard({ i, m, setMed, setMedFields, egfr, del, allergyConflict }) {
               <DoseInput m={m} onChange={(obj) => setMedFields(i, obj)} />
             </div>
           </div>
+
+          {/* renal-dose quick reference (ปรากฏแม้ยังไม่กรอกขนาด) */}
+          <RenalDoseHint drug={m.drug} egfr={egfr} info={info} />
 
           {/* live total daily dose readout + overdose warning */}
           <DailyDoseReadout drug={m.drug} strength={m.strength}
@@ -1595,8 +1624,9 @@ function HerbOtcSection({ items, onChange }) {
 }
 
 /* ---------- DrpAnalysisPanel ---------- */
-function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, onApplyDrps }) {
+function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, acks = {}, user, counselingNote, onAck, onCounsel, onApplyDrps }) {
   const [open, setOpen] = React.useState(true);
+  const fidOf = (fd, i) => fd.id || ("f_" + i + "_" + (fd.msg || "").slice(0, 24));
 
   const findings = React.useMemo(() => {
     try {
@@ -1660,25 +1690,86 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, c
             {findings.map((fd, i) => {
               const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[fd.sev] || "#64748b";
               const label = { HIGH: "สูง", MEDIUM: "กลาง", LOW: "ต่ำ" }[fd.sev] || fd.sev;
+              const fid = fidOf(fd, i);
+              const ack = acks[fid];
               return (
-                <div key={i} style={{ border: `1px solid ${sc}30`, borderRadius: 10, padding: "10px 13px", background: "var(--surface)" }}>
+                <div key={i} style={{ border: `1px solid ${ack ? "#86efac" : sc + "30"}`, borderRadius: 10, padding: "10px 13px", background: ack ? "#f0fdf4" : "var(--surface)" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.sev]} {label}</span>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.msg}</div>
                       {fd.rec && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.rec}</div>}
+                      {ack && <div style={{ fontSize: 11, color: "#15803d", marginTop: 5, fontWeight: 600 }}>✓ รับทราบโดย {ack.by} · {ack.at}</div>}
                     </div>
+                    {onAck && (
+                      <button type="button"
+                        onClick={() => onAck(fid, ack ? null : { by: (user && user.name) || "เภสัชกร", at: new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) })}
+                        style={{ flexShrink: 0, border: `1px solid ${ack ? "#16a34a" : sc + "60"}`, background: ack ? "#16a34a" : "var(--surface)", color: ack ? "#fff" : sc, borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: "4px 9px", cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap", marginTop: 1 }}>
+                        {ack ? "✓ รับทราบแล้ว" : "รับทราบ"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
-          <button type="button" onClick={applyAll}
-            style={{ marginTop: 12, ...ghostBtn, color: sevColor, borderColor: sevColor + "60", fontSize: 13, padding: "8px 14px" }}>
-            นำไปใส่ใน DRP ✓
-          </button>
+          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+            <button type="button" onClick={applyAll}
+              style={{ ...ghostBtn, color: sevColor, borderColor: sevColor + "60", fontSize: 13, padding: "8px 14px" }}>
+              นำไปใส่ใน DRP ✓
+            </button>
+            {onCounsel && typeof window.generateCounselingNote === "function" && (
+              <button type="button"
+                onClick={() => { const note = window.generateCounselingNote(findings); if (note) onCounsel(note); }}
+                style={{ ...ghostBtn, color: "var(--brand-deep)", borderColor: "var(--brand)", fontSize: 13, padding: "8px 14px" }}>
+                📋 สร้างคำแนะนำผู้ป่วยอัตโนมัติ
+              </button>
+            )}
+          </div>
+          {onCounsel && counselingNote && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--ink-2)", marginBottom: 5 }}>คำแนะนำผู้ป่วย (แก้ไขได้ · จะถูกบันทึกและพิมพ์ในใบสรุป)</div>
+              <textarea value={counselingNote} onChange={(e) => onCounsel(e.target.value)} rows={Math.min(10, (counselingNote.match(/\n/g) || []).length + 2)}
+                style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13, fontFamily: "var(--sans)", lineHeight: 1.5, color: "var(--ink)", background: "var(--surface)", outline: "none", resize: "vertical" }} />
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------- MedDiffPanel — เปรียบเทียบยาเปลี่ยนแปลงจากนัดก่อน ---------- */
+function MedDiffPanel({ prev, curMeds }) {
+  const diff = React.useMemo(() => {
+    if (typeof window.diffMedLists !== "function") return null;
+    return window.diffMedLists(prev.meds || [], curMeds || []);
+  }, [prev, curMeds]);
+  if (!diff) return null;
+  const total = diff.added.length + diff.stopped.length + diff.changed.length;
+  if (total === 0) {
+    return (
+      <div style={{ marginBottom: 14, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface-2)", padding: "10px 14px", fontSize: 12.5, color: "var(--ink-2)" }}>
+        เทียบกับนัด {fmtDate(prev.date)}: ไม่มีการเปลี่ยนแปลงรายการยา ({diff.unchanged} รายการคงเดิม)
+      </div>
+    );
+  }
+  const Row = ({ tone, icon, label, text }) => (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0" }}>
+      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: tone + "18", color: tone, flexShrink: 0 }}>{icon} {label}</span>
+      <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>{text}</span>
+    </div>
+  );
+  return (
+    <div style={{ marginBottom: 14, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)", overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>
+        🔄 เปรียบเทียบยากับนัด {fmtDate(prev.date)} — เปลี่ยน {total} รายการ
+      </div>
+      <div style={{ padding: "6px 14px 10px" }}>
+        {diff.added.map((m, i) => <Row key={"a" + i} tone="#16a34a" icon="🟢" label="เพิ่มใหม่" text={`${m.drug} ${m.strength || ""}`.trim()} />)}
+        {diff.stopped.map((m, i) => <Row key={"s" + i} tone="#dc2626" icon="🔴" label="หยุด" text={`${m.drug} ${m.strength || ""}`.trim()} />)}
+        {diff.changed.map((c, i) => <Row key={"c" + i} tone="#d97706" icon="🟡" label="เปลี่ยนขนาด" text={`${c.drug}: ${c.from || "–"} → ${c.to || "–"}`} />)}
+      </div>
     </div>
   );
 }

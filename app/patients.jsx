@@ -26,7 +26,9 @@ function PatientCard({ r, onOpen, idx }) {
   const riskColors = { high:"#dc2626", medium:"#d97706", low:"#16a34a" };
   const riskBg     = { high:"#fef2f2", medium:"#fffbeb", low:"#f0fdf4" };
   const c = riskColors[r.risk.band];
-  const overdue = r.followUp && r.followUp.due < "2026-05-31";
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const overdue = r.followUp && r.followUp.due && r.followUp.due < todayStr;
+  const overdueDays = overdue ? Math.round((new Date(todayStr) - new Date(r.followUp.due)) / 86400000) : 0;
 
   return (
     <div onClick={() => onOpen(r.hn)} className="card-modern"
@@ -72,7 +74,7 @@ function PatientCard({ r, onOpen, idx }) {
               background:overdue?"#fef2f2":"#fffbeb",
               border:`1px solid ${overdue?"#fca5a5":"#fde68a"}` }}>
               <Icon name="clock" size={11} color={overdue?"#dc2626":"#d97706"} />
-              {overdue?"เกินกำหนด ":"นัด "}{fmtDate(r.followUp.due)}
+              {overdue?`เกินกำหนด ${overdueDays} วัน · `:"นัด "}{fmtDate(r.followUp.due)}
             </div>
           ) : (
             <div style={{ fontSize:11.5, color:"var(--ink-2)" }}>{fmtDate(r.date)}</div>
@@ -508,6 +510,13 @@ const ghostBtn = { display: "inline-flex", alignItems: "center", gap: 7, padding
 /* ---------- Print / PDF Modal ---------- */
 function PrintModal({ rec, patient, onClose }) {
   const risk = computeRisk(rec);
+  const autoFindings = React.useMemo(() => {
+    try {
+      if (typeof window.analyzeDRPs !== "function") return [];
+      const res = window.analyzeDRPs({ meds: rec.meds || [], otcItems: rec.otcItems || [], egfr: rec.egfr, k: rec.k, ckdStage: rec.ckdStage, hb: rec.hb, hco3: rec.hco3, phos: rec.phos, ca: rec.ca, bpSys: rec.bpSys, bpDia: rec.bpDia, uacr: rec.uacr, dm: rec.dm });
+      return (res && Array.isArray(res.findings)) ? res.findings : [];
+    } catch (e) { return []; }
+  }, [rec]);
   const drpLabels = (rec.drps || []).map((k) => DRP_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
   const intLabels = (rec.interventions || []).map((k) => INTERVENTION_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
 
@@ -585,6 +594,21 @@ function PrintModal({ rec, patient, onClose }) {
                 <td style={{ ...ptd, textAlign: "center" }}>{rec.hr || "–"}</td>
               </tr>
             </tbody>
+            {(rec.hb || rec.hco3 || rec.phos || rec.ca || rec.uacr || rec.dm) && (
+              <>
+                <thead><tr>{["Hb (g/dL)","HCO₃⁻ (mEq/L)","PO₄ (mmol/L)","Ca (mmol/L)","UACR (mg/g)","เบาหวาน"].map((h) => <th key={h} style={{ ...pth, background: "#e0f2f1" }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  <tr>
+                    <td style={{ ...ptd, textAlign: "center", color: rec.hb && Number(rec.hb) < 10 ? "#dc2626" : "#111" }}>{rec.hb || "–"}</td>
+                    <td style={{ ...ptd, textAlign: "center", color: rec.hco3 && Number(rec.hco3) < 22 ? "#dc2626" : "#111" }}>{rec.hco3 || "–"}</td>
+                    <td style={{ ...ptd, textAlign: "center", color: rec.phos && Number(rec.phos) > 1.78 ? "#dc2626" : "#111" }}>{rec.phos || "–"}</td>
+                    <td style={{ ...ptd, textAlign: "center" }}>{rec.ca || "–"}</td>
+                    <td style={{ ...ptd, textAlign: "center", color: rec.uacr && Number(rec.uacr) >= 300 ? "#dc2626" : "#111" }}>{rec.uacr || "–"}</td>
+                    <td style={{ ...ptd, textAlign: "center" }}>{rec.dm ? "✓" : "–"}</td>
+                  </tr>
+                </tbody>
+              </>
+            )}
           </table>
 
           {/* Medications */}
@@ -604,13 +628,32 @@ function PrintModal({ rec, patient, onClose }) {
           </table>
 
           {/* DRP */}
-          {drpLabels.length > 0 && (
+          {(drpLabels.length > 0 || (autoFindings && autoFindings.length > 0)) && (
             <table style={ptbl}>
               <thead><tr><th style={{ ...pth, color: "#b91c1c", background: "#fef2f2", borderBottomColor: "#dc2626" }} colSpan={2}>ปัญหาด้านยา (DRP)</th></tr></thead>
               <tbody>
-                <tr><td style={ptdKey}>ประเภท DRP</td><td style={ptd}>{drpLabels.join(", ")}</td></tr>
+                {drpLabels.length > 0 && <tr><td style={ptdKey}>ประเภท DRP</td><td style={ptd}>{drpLabels.join(", ")}</td></tr>}
                 {rec.drpDetail && <tr><td style={ptdKey}>รายละเอียด</td><td style={ptd}>{rec.drpDetail}</td></tr>}
+                {autoFindings && autoFindings.length > 0 && (
+                  <tr><td style={ptdKey}>ผลวิเคราะห์อัตโนมัติ</td><td style={ptd}>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {autoFindings.map((fd, i) => (
+                        <li key={i} style={{ marginBottom: 4, color: fd.sev === "HIGH" ? "#b91c1c" : "#111" }}>
+                          {fd.msg}{fd.rec ? <span style={{ color: "#6b7280" }}> → {fd.rec}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </td></tr>
+                )}
               </tbody>
+            </table>
+          )}
+
+          {/* Counseling note */}
+          {rec.counselingNote && (
+            <table style={ptbl}>
+              <thead><tr><th style={pth} colSpan={2}>คำแนะนำที่ให้ผู้ป่วย (Counseling)</th></tr></thead>
+              <tbody><tr><td style={{ ...ptd, whiteSpace: "pre-wrap", lineHeight: 1.6 }} colSpan={2}>{rec.counselingNote}</td></tr></tbody>
             </table>
           )}
 
