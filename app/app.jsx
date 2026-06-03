@@ -151,6 +151,33 @@ function App() {
     return () => unsub && unsub();
   }, [user?.id]);
 
+  async function deleteRecord(rec, reason) {
+    setSyncState("syncing");
+    try {
+      const log = {
+        id: "del_" + Date.now(),
+        type: "delete_visit",
+        recordId: rec.id,
+        hn: rec.hn,
+        patientName: rec.name,
+        visitDate: rec.date,
+        deletedBy: user.name,
+        deletedByUsername: user.username,
+        deletedAt: new Date().toISOString(),
+        reason: reason || "",
+        snapshot: JSON.stringify(rec),
+      };
+      await window.db?.collection("pharm_ckd_delete_log").doc(log.id).set(log).catch(() => {});
+      await FirebaseStore.remove(rec.id);
+      showToast(`ลบ Visit ${rec.date} ของ ${rec.name} แล้ว`, "success", "ลบแล้ว");
+      const remaining = records.filter((r) => r.hn === rec.hn && r.id !== rec.id);
+      setRoute(remaining.length ? { view: "patient", hn: rec.hn } : { view: "patients" });
+    } catch (e) {
+      showToast("ลบไม่สำเร็จ: " + e.message, "error", "เกิดข้อผิดพลาด");
+    }
+    setTimeout(() => setSyncState("synced"), 900);
+  }
+
   async function saveRecord(rec) {
     setSyncState("syncing");
     try {
@@ -200,9 +227,12 @@ function App() {
   else if (route.view === "patient")
     page = <PatientDetail hn={route.hn} records={records} user={user} onBack={() => setRoute({ view: "patients" })}
       onEdit={(rec) => setRoute({ view: "form", editing: rec })}
+      onDelete={deleteRecord}
       onNew={(p) => setRoute({ view: "form", editing: { hn: p.hn, name: p.name, age: p.age, ckdStage: p.ckdStage, allergy: p.allergy, date: "2026-05-29", meds: [], sources: [], drps: [], interventions: [], comparedPrev: false, comparedNew: false, discrepancy: "none", id: undefined } })} />;
   else if (route.view === "settings")
     page = <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />;
+  else if (route.view === "deletelog" && user.role === "admin")
+    page = <DeleteLogPage />;
   else if (route.view === "form")
     page = <BpmlForm initial={route.editing} user={user} records={records} onSave={saveRecord} onCancel={() => setRoute({ view: route.editing?.id ? "patient" : "dashboard", hn: route.editing?.hn })} />;
   else if (route.view === "calendar")
@@ -218,6 +248,7 @@ function App() {
     ...(user.role === "admin" ? [
       { v: "reports", icon: "trend", label: "รายงาน" },
       { v: "settings", icon: "shield", label: "จัดการบัญชี" },
+      { v: "deletelog", icon: "clock", label: "ประวัติลบ" },
     ] : []),
   ];
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);

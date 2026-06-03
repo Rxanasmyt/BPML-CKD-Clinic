@@ -1,6 +1,102 @@
 /* =========================================================================
    patients.jsx — รายชื่อผู้ป่วย (ค้นหา/กรอง/จัดลำดับเสี่ยง) + รายละเอียด/ประวัติ
    ========================================================================= */
+
+/* ---------- ConfirmDeleteModal ---------- */
+function ConfirmDeleteModal({ rec, onConfirm, onCancel }) {
+  const [reason, setReason] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
+  const canDelete = confirm.trim() === "ลบ";
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:18, padding:"28px 28px 24px", width:"100%", maxWidth:440, boxShadow:"0 24px 60px rgba(0,0,0,.25)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:18 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:"#fef2f2", display:"grid", placeItems:"center", flexShrink:0 }}>
+            <Icon name="alert" size={22} color="#dc2626" />
+          </div>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700, color:"var(--ink)" }}>ยืนยันการลบ Visit</div>
+            <div style={{ fontSize:13, color:"var(--ink-2)", marginTop:2 }}>การลบไม่สามารถกู้คืนได้ แต่มี audit log บันทึกไว้</div>
+          </div>
+        </div>
+        <div style={{ background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:10, padding:"12px 14px", marginBottom:18, fontSize:13.5 }}>
+          <div style={{ fontWeight:600, color:"#b91c1c", marginBottom:4 }}>Visit ที่จะลบ:</div>
+          <div style={{ color:"var(--ink)" }}>{rec.name} · HN {rec.hn}</div>
+          <div style={{ color:"var(--ink-2)", fontFamily:"var(--mono)", fontSize:12.5, marginTop:2 }}>วันที่ {rec.date} · {(rec.meds||[]).length} รายการยา</div>
+        </div>
+        <label style={{ display:"block", fontSize:13, fontWeight:600, color:"var(--ink)", marginBottom:6 }}>เหตุผลการลบ (ไม่บังคับ)</label>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)}
+          placeholder="เช่น บันทึกผิดผู้ป่วย, ข้อมูลซ้ำ..."
+          style={{ width:"100%", padding:"10px 12px", border:"1.5px solid var(--border)", borderRadius:10, fontSize:13.5, fontFamily:"var(--sans)", color:"var(--ink)", background:"var(--surface)", boxSizing:"border-box", resize:"vertical", minHeight:72, outline:"none", marginBottom:16 }} />
+        <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#b91c1c", marginBottom:6 }}>พิมพ์ "ลบ" เพื่อยืนยัน</label>
+        <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder='พิมพ์ "ลบ"'
+          style={{ width:"100%", padding:"11px 12px", border:`1.5px solid ${canDelete?"#dc2626":"var(--border)"}`, borderRadius:10, fontSize:15, fontFamily:"var(--sans)", color:"var(--ink)", background:"var(--surface)", boxSizing:"border-box", outline:"none", marginBottom:18, transition:"border-color 0.2s" }} />
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onCancel} style={{ flex:1, padding:"12px", border:"1.5px solid var(--border)", borderRadius:10, background:"var(--surface)", color:"var(--ink)", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"var(--sans)" }}>ยกเลิก</button>
+          <button onClick={() => canDelete && onConfirm(reason)} disabled={!canDelete}
+            style={{ flex:1, padding:"12px", border:"none", borderRadius:10, background: canDelete?"#dc2626":"#fca5a5", color:"#fff", fontSize:14, fontWeight:700, cursor: canDelete?"pointer":"not-allowed", fontFamily:"var(--sans)", transition:"background 0.2s" }}>
+            ลบ Visit นี้
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- DeleteLogPage ---------- */
+function DeleteLogPage() {
+  const [logs, setLogs] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(null);
+  React.useEffect(() => {
+    if (!window.db) { setLoading(false); return; }
+    window.db.collection("pharm_ckd_delete_log").orderBy("deletedAt","desc").limit(200)
+      .get().then((snap) => {
+        setLogs(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+        setLoading(false);
+      }).catch(() => setLoading(false));
+  }, []);
+  return (
+    <div style={{ padding:"clamp(18px,2.4vw,30px)", maxWidth:860, margin:"0 auto" }}>
+      <div style={{ marginBottom:20 }}>
+        <h2 style={{ fontSize:22, fontWeight:700, color:"var(--ink)", margin:"0 0 4px" }}>ประวัติการลบข้อมูล</h2>
+        <p style={{ color:"var(--ink-2)", fontSize:13.5, margin:0 }}>Audit log — บันทึกทุกครั้งที่มีการลบ Visit (เฉพาะแอดมิน)</p>
+      </div>
+      {loading ? (
+        <div style={{ textAlign:"center", padding:48, color:"var(--ink-2)" }}>กำลังโหลด...</div>
+      ) : !logs.length ? (
+        <div style={{ textAlign:"center", padding:48, color:"var(--ink-2)", background:"var(--surface)", borderRadius:14, border:"1px solid var(--border)" }}>ยังไม่มีประวัติการลบข้อมูล</div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {logs.map((log) => (
+            <div key={log.id} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:13, overflow:"hidden" }}>
+              <div style={{ padding:"14px 18px", display:"flex", alignItems:"center", gap:14, flexWrap:"wrap", cursor:"pointer" }}
+                onClick={() => setExpanded(expanded===log.id ? null : log.id)}>
+                <div style={{ width:36, height:36, borderRadius:10, background:"#fef2f2", display:"grid", placeItems:"center", flexShrink:0 }}>
+                  <Icon name="alert" size={18} color="#dc2626" />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:600, color:"var(--ink)", fontSize:14 }}>{log.patientName} · HN {log.hn}</div>
+                  <div style={{ color:"var(--ink-2)", fontSize:12.5, marginTop:2 }}>Visit {log.visitDate} · ลบโดย {log.deletedBy} ({log.deletedByUsername})</div>
+                </div>
+                <div style={{ textAlign:"right", flexShrink:0 }}>
+                  <div style={{ fontSize:12, color:"var(--ink-2)", fontFamily:"var(--mono)" }}>{new Date(log.deletedAt).toLocaleString("th-TH")}</div>
+                  {log.reason && <div style={{ fontSize:11.5, color:"#b91c1c", marginTop:2 }}>เหตุผล: {log.reason}</div>}
+                </div>
+              </div>
+              {expanded === log.id && log.snapshot && (
+                <div style={{ borderTop:"1px solid var(--border)", padding:"12px 18px", background:"var(--bg)" }}>
+                  <div style={{ fontSize:12.5, fontWeight:600, color:"var(--ink-2)", marginBottom:8 }}>ข้อมูล Visit ที่ถูกลบ (snapshot)</div>
+                  <pre style={{ fontSize:11, color:"var(--ink-2)", fontFamily:"var(--mono)", whiteSpace:"pre-wrap", wordBreak:"break-all", margin:0, maxHeight:240, overflowY:"auto" }}>{JSON.stringify(JSON.parse(log.snapshot), null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 /* ── SVG Empty state illustration ── */
 function EmptyIllustration({ text, sub }) {
   return (
@@ -856,7 +952,7 @@ DRP ที่พบ: ${drpText}
 }
 
 /* ---------- รายละเอียด + ประวัติ ---------- */
-function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
+function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const history = records.filter((r) => r.hn === hn).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   if (!history.length) return <div style={{ padding: 40 }}>ไม่พบข้อมูล</div>;
   const cur = history[0];
@@ -865,6 +961,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
   const [activeTab, setActiveTab] = React.useState("detail");
   const [printOpen, setPrintOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
   const rec = history.find((r) => r.id === selId) || cur;
   const rRisk = computeRisk(rec);
 
@@ -876,6 +973,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
     <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1100, margin: "0 auto" }}>
       {printOpen && <PrintModal rec={rec} patient={cur} onClose={() => setPrintOpen(false)} />}
       {aiOpen && <AiSummaryModal rec={rec} patient={cur} onClose={() => setAiOpen(false)} />}
+      {deleteTarget && <ConfirmDeleteModal rec={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={(reason) => { setDeleteTarget(null); onDelete(deleteTarget, reason); }} />}
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}><Icon name="chevron" size={16} color="var(--ink-2)" />กลับ</button>
 
       {/* header */}
@@ -895,6 +993,10 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew }) {
             <button onClick={() => setAiOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>🤖 สรุป AI สำหรับแพทย์</button>
             <button onClick={() => setPrintOpen(true)} style={ghostBtn}><Icon name="download" size={15} />พิมพ์ / PDF</button>
             <button onClick={() => onEdit(rec)} style={ghostBtn}><Icon name="edit" size={15} />แก้ไข</button>
+            <button onClick={() => setDeleteTarget(rec)}
+              style={{ ...ghostBtn, color:"#dc2626", borderColor:"#fca5a5" }}>
+              <Icon name="x" size={15} color="#dc2626" />ลบ Visit นี้
+            </button>
             <button onClick={() => onNew(cur)} style={primaryBtn}><Icon name="plus" size={16} color="#fff" />บันทึกครั้งใหม่</button>
           </div>
         </div>
@@ -1049,4 +1151,4 @@ function segBtn2(on, k) {
 
 // fmtDate and TH_MONTHS defined in data.jsx
 
-Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, fmtDate });
+Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, fmtDate, DeleteLogPage });
