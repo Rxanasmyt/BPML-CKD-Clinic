@@ -164,6 +164,45 @@ function _loadScript(src) {
   window.db = db;
   console.log("✅ Firebase Firestore connected");
 
+  // --- Migrate localStorage → Firestore (ครั้งแรกที่เชื่อมต่อ) ---
+  const MIGRATED_KEY = "pharm_ckd_migrated_v1";
+  if (!localStorage.getItem(MIGRATED_KEY)) {
+    try {
+      // Migrate users
+      const LS_USERS = "pharm_ckd_users_v1";
+      const localUsers = JSON.parse(localStorage.getItem(LS_USERS) || "null");
+      if (localUsers && localUsers.length) {
+        const userSnap = await db.collection(COLL_USR).limit(1).get();
+        if (userSnap.empty) {
+          const batch = db.batch();
+          localUsers.forEach((u) => {
+            if (!u.id) u.id = "u" + Date.now() + Math.random().toString(36).slice(2);
+            batch.set(db.collection(COLL_USR).doc(u.id), u);
+          });
+          await batch.commit();
+          console.log(`✅ Migrated ${localUsers.length} users to Firestore`);
+        }
+      }
+      // Migrate records
+      const localRecs = (() => { try { return JSON.parse(localStorage.getItem("pharm_ckd_records_v1") || "null") || []; } catch(e) { return []; } })();
+      if (localRecs.length) {
+        const recSnap = await db.collection(COLL_REC).limit(1).get();
+        if (recSnap.empty) {
+          const batch = db.batch();
+          localRecs.forEach((r) => {
+            if (!r.id) r.id = "r" + Date.now() + Math.random().toString(36).slice(2);
+            batch.set(db.collection(COLL_REC).doc(r.id), r);
+          });
+          await batch.commit();
+          console.log(`✅ Migrated ${localRecs.length} records to Firestore`);
+        }
+      }
+      localStorage.setItem(MIGRATED_KEY, "1");
+    } catch (e) {
+      console.warn("Migration failed:", e);
+    }
+  }
+
   // แจ้ง App ให้ restart listener (ถ้า App ยังแสดงข้อมูล localStorage อยู่)
   window.dispatchEvent(new CustomEvent("firebase-ready"));
 })();
