@@ -208,13 +208,25 @@ function App() {
       { v: "settings", icon: "shield", label: "จัดการบัญชี" },
     ] : []),
   ];
-  const sideMode = t.navStyle === "sidebar";
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const sideMode = !isMobile && t.navStyle === "sidebar";
 
   return (
     <div style={{ minHeight: "100vh", display: sideMode ? "flex" : "block", background: "var(--bg)", fontFamily: "var(--sans)", color: "var(--ink)" }}>
-      <style>{`@media print { .sidebar, header, .no-print { display: none !important; } body, .app-main { background: #fff !important; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
+      <style>{`
+        @media print { .sidebar, header, .no-print { display: none !important; } body, .app-main { background: #fff !important; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        .bottom-nav-btn:active { opacity: 0.7; transform: scale(0.92); }
+      `}</style>
       {changePinOpen && <ChangePinModal user={user} onClose={() => setChangePinOpen(false)} onUpdated={updateCurrentUser} />}
-      {sideMode ? (
+
+      {/* Desktop: sidebar or topbar */}
+      {!isMobile && (sideMode ? (
         <aside className="sidebar" style={{ width: 232, background: 'linear-gradient(175deg, var(--sidebar) 0%, color-mix(in srgb,var(--sidebar) 80%,#000) 100%)', color: "var(--sidebar-ink)", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
           <Brand />
           <nav style={{ flex: 1, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -230,12 +242,51 @@ function App() {
           </nav>
           <UserCard user={user} onLogout={logout} onChangePin={() => setChangePinOpen(true)} compact />
         </header>
+      ))}
+
+      {/* Mobile: top mini-header */}
+      {isMobile && (
+        <div style={{ background: "var(--sidebar)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 52, position: "sticky", top: 0, zIndex: 30, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--sidebar-active)", display: "grid", placeItems: "center" }}>
+              <Icon name="kidney" size={18} color="#fff" />
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", lineHeight: 1.1 }}>PHARM-CKD</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "rgba(255,255,255,.75)" }}>
+              <span style={{ width: 7, height: 7, borderRadius: 99, background: syncState === "synced" ? "#4ade80" : "#fbbf24", flexShrink: 0 }} />
+              {syncState === "synced" ? "ซิงค์แล้ว" : "กำลังซิงค์"}
+            </div>
+            {dueFollow.length > 0 && (
+              <div style={{ background: "#dc2626", color: "#fff", borderRadius: 99, minWidth: 20, height: 20, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, padding: "0 5px" }}>{dueFollow.length}</div>
+            )}
+            <UserCard user={user} onLogout={logout} onChangePin={() => setChangePinOpen(true)} compact />
+          </div>
+        </div>
       )}
 
-      <main style={{ flex: 1, minWidth: 0 }}>
-        <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />
+      <main style={{ flex: 1, minWidth: 0, paddingBottom: isMobile ? 64 : 0 }}>
+        {!isMobile && <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />}
         <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
       </main>
+
+      {/* Mobile: bottom navigation */}
+      {isMobile && (
+        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50, background: "var(--surface)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "stretch", height: 62, boxShadow: "0 -4px 20px rgba(0,0,0,.1)" }}>
+          {nav.map((n) => {
+            const active = route.view === n.v || (n.v === "patients" && route.view === "patient");
+            return (
+              <button key={n.v} className="bottom-nav-btn" onClick={() => setRoute({ view: n.v })} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", fontFamily: "var(--sans)", padding: "6px 2px", transition: "all 0.15s", color: active ? "var(--brand)" : "var(--ink-2)" }}>
+                <div style={{ width: active ? 36 : 28, height: 28, borderRadius: active ? 10 : 8, background: active ? "var(--brand-soft)" : "transparent", display: "grid", placeItems: "center", transition: "all 0.15s" }}>
+                  <Icon name={n.icon} size={19} color={active ? "var(--brand)" : "var(--ink-2)"} />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, lineHeight: 1 }}>{n.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
       {themePanel}
       {installBanner && (
         <div style={{
