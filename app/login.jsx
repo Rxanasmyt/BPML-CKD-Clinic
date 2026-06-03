@@ -54,6 +54,7 @@ function LoginScreen({ onLogin }) {
   const [shake, setShake] = React.useState(false);
   const [userFocus, setUserFocus] = React.useState(false);
   const [pinFocus, setPinFocus] = React.useState(false);
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
   async function submit(e) {
     e && e.preventDefault();
@@ -75,16 +76,19 @@ function LoginScreen({ onLogin }) {
     setLoading(false);
   }
 
-  function quick(u) { setUsername(u.username); setPin(u.pin); setErr(""); }
-
   return (
-    <div style={{ minHeight:"100vh", display:"grid", gridTemplateColumns:"1.1fr 1fr",
+    <div style={{ minHeight:"100vh", display:"grid",
+      gridTemplateColumns: isMobile ? "1fr" : "1.1fr 1fr",
       background:"var(--bg)", fontFamily:"var(--sans)" }}>
 
       {/* ── Left: brand panel ── */}
       <div style={{ background:"var(--sidebar)", color:"#fff",
-        padding:"clamp(32px,5vw,72px)", display:"flex", flexDirection:"column",
-        justifyContent:"space-between", position:"relative", overflow:"hidden" }}>
+        padding: isMobile ? "28px 24px" : "clamp(32px,5vw,72px)",
+        display:"flex", flexDirection:"column",
+        justifyContent: isMobile ? "flex-start" : "space-between",
+        gap: isMobile ? 20 : 0,
+        position:"relative", overflow:"hidden",
+        minHeight: isMobile ? "auto" : "100vh" }}>
 
         {/* Animated particle canvas */}
         <ParticleCanvas />
@@ -151,19 +155,22 @@ function LoginScreen({ onLogin }) {
           </div>
         </div>
 
-        {/* Footer stats */}
-        <div style={{ position:"relative", display:"flex", gap:22, animation:"fadeUp 0.5s ease-out 0.3s both" }}>
-          {[["100%", "ทำงานออฟไลน์"], ["AES-256", "เข้ารหัสข้อมูล"], ["Real-time", "Firebase Sync"]].map(([val, lbl]) => (
-            <div key={lbl} style={{ textAlign:"center" }}>
-              <div style={{ fontFamily:"var(--mono)", fontSize:14, fontWeight:800, color:"rgba(255,255,255,.9)" }}>{val}</div>
-              <div style={{ fontSize:10.5, opacity:.55, marginTop:2 }}>{lbl}</div>
-            </div>
-          ))}
-        </div>
+        {/* Footer stats — hidden on mobile */}
+        {!isMobile && (
+          <div style={{ position:"relative", display:"flex", gap:22, animation:"fadeUp 0.5s ease-out 0.3s both" }}>
+            {[["100%", "ทำงานออฟไลน์"], ["AES-256", "เข้ารหัสข้อมูล"], ["Real-time", "Firebase Sync"]].map(([val, lbl]) => (
+              <div key={lbl} style={{ textAlign:"center" }}>
+                <div style={{ fontFamily:"var(--mono)", fontSize:14, fontWeight:800, color:"rgba(255,255,255,.9)" }}>{val}</div>
+                <div style={{ fontSize:10.5, opacity:.55, marginTop:2 }}>{lbl}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Right: login form ── */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", padding:"32px",
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center",
+        padding: isMobile ? "24px 20px 40px" : "32px",
         background:"var(--bg)" }}>
         <form onSubmit={submit}
           style={{ width:"100%", maxWidth:380,
@@ -183,7 +190,7 @@ function LoginScreen({ onLogin }) {
               onChange={(e) => { setUsername(e.target.value); setErr(""); }}
               onFocus={() => setUserFocus(true)}
               onBlur={() => setUserFocus(false)}
-              autoComplete="username" placeholder="เช่น pharm1"
+              autoComplete="username" placeholder="Username"
               style={{ ...inpS,
                 border: `1.5px solid ${userFocus ? "var(--brand)" : "var(--border)"}`,
                 boxShadow: userFocus
@@ -248,45 +255,6 @@ function LoginScreen({ onLogin }) {
             {loading ? <><Spinner />กำลังตรวจสอบ...</> : "เข้าสู่ระบบ"}
           </button>
 
-          {/* Demo accounts */}
-          <div style={{ marginTop:26, paddingTop:20, borderTop:"1px solid var(--border)" }}>
-            <div style={{ fontSize:12, color:"var(--ink-2)", marginBottom:10, fontWeight:600 }}>
-              บัญชีทดลอง (กดเพื่อกรอกอัตโนมัติ)
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {USERS.map((u, i) => (
-                <button key={u.id} type="button" onClick={() => quick(u)}
-                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
-                    border:"1px solid var(--border)", borderRadius:11,
-                    background:"var(--surface)", cursor:"pointer", textAlign:"left",
-                    fontFamily:"var(--sans)", transition:"all 0.18s ease",
-                    animation:`fadeUp 0.3s ease-out ${0.4+i*0.08}s both` }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--brand-soft)";
-                    e.currentTarget.style.borderColor = "var(--brand)";
-                    e.currentTarget.style.transform = "translateX(3px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--surface)";
-                    e.currentTarget.style.borderColor = "var(--border)";
-                    e.currentTarget.style.transform = "translateX(0)";
-                  }}>
-                  <span style={{ width:32, height:32, borderRadius:9,
-                    background: u.role==="admin" ? "linear-gradient(135deg,#fef3c7,#fde68a)" : "linear-gradient(135deg,var(--brand-soft),rgba(13,148,136,.15))",
-                    display:"grid", placeItems:"center", flexShrink:0,
-                    boxShadow:"0 2px 6px rgba(0,0,0,.08)" }}>
-                    <Icon name={u.role==="admin"?"shield":"user"} size={16}
-                      color={u.role==="admin"?"#b45309":"var(--brand-deep)"} />
-                  </span>
-                  <span style={{ flex:1 }}>
-                    <span style={{ display:"block", fontSize:13, fontWeight:600, color:"var(--ink)" }}>{u.name}</span>
-                    <span style={{ fontSize:11.5, color:"var(--ink-2)" }}>{u.username} · PIN {u.pin} · {u.role==="admin"?"หัวหน้า/แอดมิน":"เภสัชกร"}</span>
-                  </span>
-                  <Icon name="chevronR" size={15} color="var(--brand)" />
-                </button>
-              ))}
-            </div>
-          </div>
         </form>
       </div>
     </div>
