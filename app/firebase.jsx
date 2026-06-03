@@ -5,7 +5,7 @@
 function _buildLocalStores() {
   // Simple localStorage user store (used before Firebase loads)
   const LS_USERS = "pharm_ckd_users_v1";
-  function getLocalUsers() { try { const u = JSON.parse(localStorage.getItem(LS_USERS) || "null"); return u && u.length ? u : USERS; } catch (e) { return USERS; } }
+  function getLocalUsers() { try { const u = JSON.parse(localStorage.getItem(LS_USERS) || "null"); return u && u.length ? u : []; } catch (e) { return []; } }
   function saveLocalUsers(list) { localStorage.setItem(LS_USERS, JSON.stringify(list)); }
 
   const LocalStore = {
@@ -130,9 +130,9 @@ function _loadScript(src) {
       return db.collection(COLL_USR).onSnapshot(
         (snap) => {
           const users = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-          callback(users.length ? users : USERS);
+          callback(users);
         },
-        () => callback(USERS)
+        () => callback([])
       );
     },
     async auth(username, pin) {
@@ -143,9 +143,8 @@ function _loadScript(src) {
           const u = { ...snap.docs[0].data(), id: snap.docs[0].id };
           return u.pin === pin ? u : null;
         }
-      } catch (e) { /* fall through to local */ }
-      const u = USERS.find((x) => x.username === username.trim().toLowerCase());
-      return u && u.pin === pin ? u : null;
+      } catch (e) { /* fall through */ }
+      return null;
     },
     async save(u) {
       if (!u.id) u.id = "u" + Date.now();
@@ -155,11 +154,7 @@ function _loadScript(src) {
     },
     async remove(id) { await db.collection(COLL_USR).doc(id).delete(); },
     async seed() {
-      const snap = await db.collection(COLL_USR).limit(1).get();
-      if (!snap.empty) return;
-      const batch = db.batch();
-      USERS.forEach((u) => batch.set(db.collection(COLL_USR).doc(u.id), { ...u }));
-      await batch.commit();
+      // ไม่ seed demo users อัตโนมัติ — admin สร้างบัญชีเองผ่านหน้า "จัดการบัญชี"
     },
   };
 
