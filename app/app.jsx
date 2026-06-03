@@ -139,6 +139,18 @@ function App() {
   function login(u) { updateCurrentUser(u); setRoute({ view: "dashboard" }); }
   function logout() { setUser(null); localStorage.removeItem(AUTH_KEY); }
 
+  // sync ชื่อ/ข้อมูล user ปัจจุบันจาก Firestore อัตโนมัติ
+  React.useEffect(() => {
+    if (!user) return;
+    const unsub = FirebaseUserStore.listen((users) => {
+      const updated = users.find((u) => u.id === user.id);
+      if (updated && (updated.name !== user.name || updated.pin !== user.pin || updated.license !== user.license || updated.role !== user.role)) {
+        updateCurrentUser(updated);
+      }
+    });
+    return () => unsub && unsub();
+  }, [user?.id]);
+
   async function saveRecord(rec) {
     setSyncState("syncing");
     try {
