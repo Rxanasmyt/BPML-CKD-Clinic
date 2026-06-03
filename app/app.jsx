@@ -167,12 +167,17 @@ function App() {
         reason: reason || "",
         snapshot: JSON.stringify(rec),
       };
-      await window.db?.collection("pharm_ckd_delete_log").doc(log.id).set(log).catch(() => {});
-      await FirebaseStore.remove(rec.id);
+      if (window.db) {
+        await window.db.collection("pharm_ckd_delete_log").doc(log.id).set(log).catch((e) => console.warn("log failed:", e));
+        await window.db.collection("pharm_ckd_records").doc(rec.id).delete();
+      } else {
+        await window.FirebaseStore.remove(rec.id);
+      }
       showToast(`ลบ Visit ${rec.date} ของ ${rec.name} แล้ว`, "success", "ลบแล้ว");
       const remaining = records.filter((r) => r.hn === rec.hn && r.id !== rec.id);
       setRoute(remaining.length ? { view: "patient", hn: rec.hn } : { view: "patients" });
     } catch (e) {
+      console.error("deleteRecord error:", e);
       showToast("ลบไม่สำเร็จ: " + e.message, "error", "เกิดข้อผิดพลาด");
     }
     setTimeout(() => setSyncState("synced"), 900);
