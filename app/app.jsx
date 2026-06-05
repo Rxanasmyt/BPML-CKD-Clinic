@@ -515,4 +515,38 @@ function TopBar({ syncState, dueFollow, user, onOpenPatient }) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+/* --- Error Boundary: กัน white screen เวลา render error --- */
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("App crashed:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 16, padding: 24, textAlign: "center",
+          fontFamily: "var(--sans)", background: "#f1f6f5", color: "#334" }}>
+          <div style={{ fontSize: 38 }}>⚠️</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>เกิดข้อผิดพลาดในการแสดงผล</div>
+          <div style={{ fontSize: 13, color: "#dc2626", maxWidth: 480, wordBreak: "break-word" }}>
+            {String(this.state.error && this.state.error.message || this.state.error)}
+          </div>
+          <button onClick={() => window.location.reload()}
+            style={{ marginTop: 8, padding: "10px 22px", borderRadius: 10, border: "none",
+              background: "#0d9488", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            โหลดใหม่
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// เคลียร์ boot-loader เมื่อ React mount สำเร็จ
+const _bootLoader = document.getElementById("boot-loader");
+if (_bootLoader) _bootLoader.remove();
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <AppErrorBoundary><App /></AppErrorBoundary>
+);
