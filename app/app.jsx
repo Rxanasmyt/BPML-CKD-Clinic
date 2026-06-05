@@ -104,6 +104,12 @@ function App() {
   }
   const [changePinOpen, setChangePinOpen] = React.useState(false);
   const [syncState, setSyncState] = React.useState("connecting"); // connecting | synced | syncing | error
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /* --- Firebase realtime listener --- */
   React.useEffect(() => {
@@ -255,12 +261,6 @@ function App() {
       { v: "deletelog", icon: "clock", label: "ประวัติลบ" },
     ] : []),
   ];
-  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
-  React.useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
 
   const sideMode = !isMobile && t.navStyle === "sidebar";
 
