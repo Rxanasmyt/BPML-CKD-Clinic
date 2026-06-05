@@ -82,7 +82,7 @@ function App() {
   React.useEffect(() => { window.showToast = showToast; }, [showToast]);
 
   const [user, setUser] = React.useState(() => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; } });
-  const [records, setRecords] = React.useState(() => Store.all());
+  const [records, setRecords] = React.useState([]);
   const [route, setRoute] = React.useState({ view: "dashboard" });
 
   /* --- PWA install banner --- */
@@ -191,11 +191,10 @@ function App() {
       showToast("บันทึกข้อมูลผู้ป่วยสำเร็จ", "success", "บันทึกแล้ว ✓");
       setRoute({ view: "patient", hn: saved.hn });
     } catch (e) {
-      showToast("บันทึกไม่สำเร็จ กรุณาลองใหม่", "error", "เกิดข้อผิดพลาด");
-      // offline fallback: localStorage
-      const saved = Store.save({ ...rec });
-      setRecords(Store.all());
-      setRoute({ view: "patient", hn: saved.hn });
+      console.error("saveRecord error:", e);
+      showToast("บันทึกไม่สำเร็จ — ไม่สามารถเชื่อมต่อฐานข้อมูล กรุณาลองใหม่", "error", "เกิดข้อผิดพลาด");
+      setSyncState("error");
+      return;
     }
     setTimeout(() => setSyncState("synced"), 900);
   }

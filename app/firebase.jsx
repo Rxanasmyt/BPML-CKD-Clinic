@@ -114,14 +114,9 @@ function _loadScript(src) {
       const batch = db.batch();
       snap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
-      await RealStore.seed(true);
     },
-    async seed(force = false) {
-      const snap = await db.collection(COLL_REC).limit(1).get();
-      if (!force && !snap.empty) return;
-      const batch = db.batch();
-      SEED_RECORDS.forEach((r) => batch.set(db.collection(COLL_REC).doc(r.id), { ...r }));
-      await batch.commit();
+    async seed() {
+      // ไม่ seed ข้อมูลตัวอย่างอัตโนมัติ — Firestore เป็นแหล่งข้อมูลจริงเพียงแหล่งเดียว
     },
   };
 
