@@ -230,6 +230,17 @@ function SettingsPage({ currentUser, onUserUpdated }) {
     return unsub;
   }, []);
 
+  // เฉพาะแอดมินเท่านั้นที่จัดการบัญชีได้
+  if (!currentUser || currentUser.role !== "admin") {
+    return (
+      <div style={{ padding: "60px 24px", maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
+        <div style={{ fontSize: 44, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)" }}>ไม่มีสิทธิ์เข้าถึง</div>
+        <div style={{ fontSize: 14, color: "var(--ink-2)", marginTop: 8 }}>เฉพาะหัวหน้า/แอดมินเท่านั้นที่จัดการบัญชีได้</div>
+      </div>
+    );
+  }
+
   async function handleDelete(u) {
     try { await FirebaseUserStore.remove(u.id); } catch (e) { alert("ลบไม่สำเร็จ: " + e.message); }
     setModal(null);

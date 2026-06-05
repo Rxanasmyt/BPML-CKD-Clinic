@@ -73,6 +73,19 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 
 const AUTH_KEY = "pharm_ckd_user_v1";
 
+function AccessDenied() {
+  return (
+    <div style={{ padding: "60px 24px", maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
+      <div style={{ fontSize: 44, marginBottom: 12 }}>🔒</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)" }}>ไม่มีสิทธิ์เข้าถึง</div>
+      <div style={{ fontSize: 14, color: "var(--ink-2)", marginTop: 8, lineHeight: 1.6 }}>
+        เฉพาะหัวหน้า/แอดมินเท่านั้นที่เข้าถึงหน้านี้ได้<br />
+        หากต้องการสิทธิ์เพิ่มเติม กรุณาติดต่อผู้ดูแลระบบ
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   React.useEffect(() => { applyTheme(t.theme, t.density); }, [t.theme, t.density]);
@@ -240,9 +253,11 @@ function App() {
       onDelete={deleteRecord}
       onNew={(p) => setRoute({ view: "form", editing: { hn: p.hn, name: p.name, age: p.age, ckdStage: p.ckdStage, allergy: p.allergy, date: "2026-05-29", meds: [], sources: [], drps: [], interventions: [], comparedPrev: false, comparedNew: false, discrepancy: "none", id: undefined } })} />;
   else if (route.view === "settings")
-    page = <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />;
-  else if (route.view === "deletelog" && user.role === "admin")
-    page = <DeleteLogPage />;
+    page = user.role === "admin"
+      ? <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />
+      : <AccessDenied />;
+  else if (route.view === "deletelog")
+    page = user.role === "admin" ? <DeleteLogPage /> : <AccessDenied />;
   else if (route.view === "form")
     page = <BpmlForm initial={route.editing} user={user} records={records} onSave={saveRecord} onCancel={() => setRoute({ view: route.editing?.id ? "patient" : "dashboard", hn: route.editing?.hn })} />;
   else if (route.view === "calendar")
