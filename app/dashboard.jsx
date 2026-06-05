@@ -866,7 +866,7 @@ function buildTrend(records) {
   });
   const base=[4,6,5,8,7,0];
   return {
-    values: buckets.map((b,i)=>b.n+(records===SEED_RECORDS?base[i]:0)),
+    values: buckets.map((b)=>b.n),
     labels: buckets.map((b)=>b.label),
   };
 }

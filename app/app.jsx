@@ -236,7 +236,7 @@ function App() {
 
   if (!user) return <><LoginScreen onLogin={login} />{themePanel}</>;
 
-  const scope = user.role === "admin" ? records : records.filter((r) => r.createdBy === user.id);
+  const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด (Firestore เป็น single source of truth)
   const dueFollow = scope.filter((r) => r.followUp && r.followUp.due && r.followUp.due <= "2026-06-05")
     .sort((a, b) => (a.followUp.due || "").localeCompare(b.followUp.due || ""));
 
