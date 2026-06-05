@@ -118,6 +118,7 @@ function App() {
   const [changePinOpen, setChangePinOpen] = React.useState(false);
   const [syncState, setSyncState] = React.useState("connecting"); // connecting | synced | syncing | error
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+  const [moreOpen, setMoreOpen] = React.useState(false);
   React.useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", onResize);
@@ -333,21 +334,53 @@ function App() {
         <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
       </main>
 
-      {/* Mobile: bottom navigation */}
-      {isMobile && (
-        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50, background: "var(--surface)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "stretch", height: 62, boxShadow: "0 -4px 20px rgba(0,0,0,.1)" }}>
-          {nav.map((n) => {
-            const active = route.view === n.v || (n.v === "patients" && route.view === "patient");
-            return (
-              <button key={n.v} className="bottom-nav-btn" onClick={() => setRoute({ view: n.v })} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", fontFamily: "var(--sans)", padding: "6px 2px", transition: "all 0.15s", color: active ? "var(--brand)" : "var(--ink-2)" }}>
-                <div style={{ width: active ? 36 : 28, height: 28, borderRadius: active ? 10 : 8, background: active ? "var(--brand-soft)" : "transparent", display: "grid", placeItems: "center", transition: "all 0.15s" }}>
-                  <Icon name={n.icon} size={19} color={active ? "var(--brand)" : "var(--ink-2)"} />
-                </div>
-                <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, lineHeight: 1 }}>{n.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+      {/* Mobile: bottom navigation (max 4 primary + More sheet) */}
+      {isMobile && (() => {
+        const primary = nav.slice(0, 4);
+        const overflow = nav.slice(4);
+        const overflowActive = overflow.some((n) => route.view === n.v);
+        const cells = overflow.length
+          ? [...primary, { v: "__more", icon: "menu", label: "เพิ่มเติม", _more: true }]
+          : primary;
+        return (
+          <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 50, background: "var(--surface)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "stretch", height: 62, boxShadow: "0 -4px 20px rgba(0,0,0,.1)" }}>
+            {cells.map((n) => {
+              const active = n._more ? overflowActive : (route.view === n.v || (n.v === "patients" && route.view === "patient"));
+              return (
+                <button key={n.v} className="bottom-nav-btn" onClick={() => n._more ? setMoreOpen(true) : setRoute({ view: n.v })} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", fontFamily: "var(--sans)", padding: "6px 2px", transition: "all 0.15s", color: active ? "var(--brand)" : "var(--ink-2)" }}>
+                  <div style={{ width: active ? 36 : 28, height: 28, borderRadius: active ? 10 : 8, background: active ? "var(--brand-soft)" : "transparent", display: "grid", placeItems: "center", transition: "all 0.15s" }}>
+                    <Icon name={n.icon} size={19} color={active ? "var(--brand)" : "var(--ink-2)"} />
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, lineHeight: 1 }}>{n.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        );
+      })()}
+
+      {/* Mobile: "More" bottom sheet */}
+      {isMobile && moreOpen && (
+        <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "flex-end", animation: "fadeIn 0.2s ease-out both" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "var(--surface)", borderRadius: "20px 20px 0 0", padding: "10px 16px calc(16px + env(safe-area-inset-bottom))", animation: "fadeUp 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
+            <div style={{ width: 40, height: 4, borderRadius: 99, background: "var(--border)", margin: "6px auto 14px" }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--ink-2)", margin: "0 6px 10px" }}>เมนูเพิ่มเติม</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+              {nav.slice(4).map((n) => {
+                const active = route.view === n.v;
+                return (
+                  <button key={n.v} onClick={() => { setRoute({ view: n.v }); setMoreOpen(false); }}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 8px", borderRadius: 14, cursor: "pointer", fontFamily: "var(--sans)",
+                      border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                      background: active ? "var(--brand-soft)" : "var(--surface-2)" }}>
+                    <Icon name={n.icon} size={22} color={active ? "var(--brand)" : "var(--ink)"} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: active ? "var(--brand-deep)" : "var(--ink)" }}>{n.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
       {themePanel}
       {installBanner && (

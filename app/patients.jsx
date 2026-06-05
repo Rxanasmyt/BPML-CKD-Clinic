@@ -192,7 +192,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   const [sort, setSort] = React.useState("risk");
   const [view, setView] = React.useState("card"); // card | table
 
-  const scope = user.role === "admin" ? records : records.filter((r) => r.createdBy === user.id);
+  const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
   const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
   let rows = [...all];
 
@@ -313,6 +313,21 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
             ))}
           </div>
         )
+      ) : all.length === 0 ? (
+        <div className="card-modern" style={{ background:"var(--surface)", borderRadius:20, padding:"clamp(32px,5vw,60px) 24px", textAlign:"center", animation:"scaleIn 0.4s cubic-bezier(0.34,1.4,0.64,1) both" }}>
+          <div className="float-anim" style={{ fontSize:60, marginBottom:8 }}>🗂️</div>
+          <h2 style={{ fontSize:20, fontWeight:800, color:"var(--ink)", margin:"0 0 8px" }}>ยังไม่มีผู้ป่วยในระบบ</h2>
+          <p style={{ fontSize:14, color:"var(--ink-2)", maxWidth:380, margin:"0 auto 24px", lineHeight:1.6 }}>
+            เริ่มบันทึกข้อมูลการทำ Medication Reconciliation ของผู้ป่วยรายแรก
+          </p>
+          <button onClick={(e)=>{ if(window.addRipple)window.addRipple(e); onNew(); }} className="btn-primary"
+            style={{ display:"inline-flex", alignItems:"center", gap:9, padding:"13px 28px",
+              background:"linear-gradient(135deg,var(--brand),var(--brand-deep))", color:"#fff",
+              border:"none", borderRadius:13, fontSize:15, fontWeight:700, cursor:"pointer",
+              fontFamily:"var(--sans)", boxShadow:"0 5px 18px rgba(13,148,136,.38)" }}>
+            <Icon name="plus" size={19} color="#fff" />บันทึกผู้ป่วยรายแรก
+          </button>
+        </div>
       ) : (
         <EmptyIllustration text="ไม่พบผู้ป่วยตามเงื่อนไข" sub="ลองเปลี่ยนตัวกรองหรือค้นหาด้วยคำอื่น" />
       )}

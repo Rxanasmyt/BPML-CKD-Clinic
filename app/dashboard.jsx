@@ -280,7 +280,7 @@ function TrendMiniChart({ trend }) {
 /*  MAIN DASHBOARD COMPONENT                       */
 /* ─────────────────────────────────────────────── */
 function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
-  const scope  = user.role === "admin" ? records : records.filter((r) => r.createdBy === user.id);
+  const scope  = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
   const latest = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
   const mounted = useMounted(50);
 
@@ -334,6 +334,53 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
   const [ts, setTs] = React.useState(() => new Date().toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" }));
   React.useEffect(() => { const id = setInterval(() => setTs(new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})), 30000); return () => clearInterval(id); }, []);
 
+  /* ── Empty / onboarding state — ยังไม่มีข้อมูลผู้ป่วย ── */
+  if (scope.length === 0) {
+    return (
+      <div style={{ padding: "clamp(16px,2.2vw,28px)", maxWidth: 1380, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 30, animation: "fadeUp 0.35s ease-out both" }}>
+          <div style={{ width: 4, height: 28, borderRadius: 2, background: "linear-gradient(180deg,var(--brand),var(--brand-deep))", boxShadow: "0 2px 8px rgba(13,148,136,.5)" }} />
+          <h1 style={{ fontSize: "clamp(22px,2.4vw,30px)", fontWeight: 800, color: "var(--ink)", margin: 0 }}>ภาพรวมคลินิก CKD</h1>
+        </div>
+
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 24, padding: "clamp(36px,6vw,72px) 24px", textAlign: "center", position: "relative", overflow: "hidden", animation: "scaleIn 0.4s cubic-bezier(0.34,1.4,0.64,1) both" }}>
+          {/* decorative gradient orbs */}
+          <div className="float-anim" style={{ position: "absolute", top: -40, right: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,var(--brand-soft),transparent 70%)", opacity: 0.6, pointerEvents: "none" }} />
+          <div className="float-anim-2" style={{ position: "absolute", bottom: -50, left: -20, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle,#7c3aed22,transparent 70%)", opacity: 0.5, pointerEvents: "none" }} />
+
+          <div style={{ position: "relative" }}>
+            <div className="float-anim" style={{ fontSize: 72, marginBottom: 6, filter: "drop-shadow(0 8px 16px rgba(13,148,136,.25))" }}>🩺</div>
+            <h2 style={{ fontSize: "clamp(20px,2.6vw,26px)", fontWeight: 800, color: "var(--ink)", margin: "0 0 10px" }}>เริ่มต้นใช้งานคลินิก CKD</h2>
+            <p style={{ fontSize: 14.5, color: "var(--ink-2)", maxWidth: 460, margin: "0 auto 28px", lineHeight: 1.65 }}>
+              ยังไม่มีข้อมูลผู้ป่วยในระบบ<br />เริ่มบันทึกการทำ Medication Reconciliation (BPML) ของผู้ป่วยรายแรกได้เลย
+            </p>
+            <button onClick={(e)=>{addRipple(e);onNew();}} className="btn-primary"
+              style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "14px 30px",
+                background: "linear-gradient(135deg,var(--brand),var(--brand-deep))", color: "#fff",
+                border: "none", borderRadius: 14, fontSize: 15.5, fontWeight: 700, cursor: "pointer",
+                fontFamily: "var(--sans)", boxShadow: "0 6px 22px rgba(13,148,136,.4)" }}>
+              <Icon name="plus" size={20} color="#fff" />บันทึกผู้ป่วยรายแรก
+            </button>
+
+            <div style={{ display: "flex", justifyContent: "center", gap: "clamp(16px,4vw,44px)", marginTop: 40, flexWrap: "wrap" }}>
+              {[
+                { icon: "📋", title: "บันทึก BPML", desc: "เปรียบเทียบยาก่อน–หลัง" },
+                { icon: "🛡️", title: "ประเมินความเสี่ยง", desc: "คัดกรอง DRP อัตโนมัติ" },
+                { icon: "📅", title: "ติดตามนัด", desc: "แจ้งเตือนผู้ป่วยที่ต้องติดตาม" },
+              ].map((f, i) => (
+                <div key={f.title} style={{ maxWidth: 160, animation: `fadeUp 0.4s ease-out ${0.2+i*0.1}s both` }}>
+                  <div style={{ fontSize: 30, marginBottom: 8 }}>{f.icon}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ink)", marginBottom: 3 }}>{f.title}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>{f.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: "clamp(16px,2.2vw,28px)", maxWidth: 1380, margin: "0 auto" }}>
 
@@ -350,7 +397,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
             </h1>
           </div>
           <p style={{ color: "var(--ink-2)", fontSize: 13.5, margin: "2px 0 0 14px" }}>
-            {user.role === "admin" ? "ข้อมูลทั้งคลินิก · ทุกเภสัชกร" : `ข้อมูลที่บันทึกโดย ${user.name}`}
+            ข้อมูลทั้งคลินิก · ทุกเภสัชกร
             {" · "}อัปเดต{" "}{fmtDate(TODAY)} {ts} น.
           </p>
         </div>
