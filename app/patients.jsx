@@ -127,7 +127,7 @@ function PatientCard({ r, onOpen, idx }) {
   const overdueDays = overdue ? Math.round((new Date(todayStr) - new Date(r.followUp.due)) / 86400000) : 0;
 
   return (
-    <div onClick={() => onOpen(r.hn)} className="card-modern"
+    <div onClick={() => onOpen(r.hn)} className="card-modern card-lift"
       style={{ background:"var(--surface)", borderRadius:16, overflow:"hidden",
         cursor:"pointer", display:"flex",
         animation:`fadeUp 0.32s ease-out ${Math.min(idx*0.05,0.4)}s both`,

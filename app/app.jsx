@@ -125,6 +125,8 @@ function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  const [dataReady, setDataReady] = React.useState(false);
+
   /* --- Firebase realtime listener --- */
   React.useEffect(() => {
     let unsub = null;
@@ -136,7 +138,7 @@ function App() {
       if (unsub) unsub();
       unsub = FirebaseStore.listen((recs, err) => {
         if (err) setSyncState("error");
-        else { setRecords(recs); setSyncState("synced"); }
+        else { setRecords(recs); setSyncState("synced"); setDataReady(true); }
       });
     }
 
@@ -330,8 +332,22 @@ function App() {
       )}
 
       <main style={{ flex: 1, minWidth: 0, paddingBottom: isMobile ? 64 : 0 }}>
-        {!isMobile && <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />}
-        <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
+        {!isMobile && <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} records={records} onNavigate={setRoute} currentTheme={t.theme} onToggleDark={() => setTweak("theme", t.theme === "dark" ? "teal" : "dark")} />}
+        {!dataReady && syncState === "connecting" ? (
+          <div style={{ padding: "clamp(16px,2.2vw,28px)", maxWidth: 1380, margin: "0 auto" }}>
+            <div style={{ display:"flex", gap:16, marginBottom:20 }}>
+              {[1,2,3,4].map((i) => <div key={i} className="skeleton" style={{ flex:1, height:120, borderRadius:16 }} />)}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1.2fr", gap:16, marginBottom:16 }}>
+              {[1,2,3].map((i) => <div key={i} className="skeleton" style={{ height:200, borderRadius:18 }} />)}
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {[1,2,3].map((i) => <div key={i} className="skeleton-line" style={{ width:`${85-i*10}%`, height:18 }} />)}
+            </div>
+          </div>
+        ) : (
+          <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
+        )}
       </main>
 
       {/* Mobile: bottom navigation (max 4 primary + More sheet) */}
@@ -528,16 +544,70 @@ function UserCard({ user, onLogout, onChangePin, side, compact }) {
   );
 }
 
-function TopBar({ syncState, dueFollow, user, onOpenPatient }) {
+function TopBar({ syncState, dueFollow, user, onOpenPatient, records = [], onNavigate, currentTheme, onToggleDark }) {
   const [open, setOpen] = React.useState(false);
+  const [searchQ, setSearchQ] = React.useState("");
+  const [searchFocus, setSearchFocus] = React.useState(false);
   const syncColors = { connecting: "#d97706", syncing: "#d97706", synced: "#16a34a", error: "#dc2626" };
   const syncLabels = { connecting: "กำลังเชื่อมต่อ Firebase...", syncing: "กำลังซิงค์...", synced: "ซิงค์ Firebase สำเร็จ", error: "เชื่อมต่อไม่ได้ — ทำงาน offline" };
+
+  // Global search results
+  const searchResults = React.useMemo(() => {
+    if (!searchQ.trim() || searchQ.trim().length < 2) return [];
+    const q = searchQ.trim().toLowerCase();
+    const seen = new Set();
+    const results = [];
+    records.forEach((r) => {
+      if ((r.name||"").toLowerCase().includes(q) || (r.hn||"").toLowerCase().includes(q)) {
+        if (!seen.has(r.hn)) { seen.add(r.hn); results.push(r); }
+      }
+    });
+    return results.slice(0, 6);
+  }, [searchQ, records]);
+
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px clamp(18px,2.4vw,30px)", borderBottom: "1px solid var(--border)", background: "var(--surface)", position: "sticky", top: 0, zIndex: 25 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", marginRight: "auto" }}>
         <span style={{ width: 8, height: 8, borderRadius: 99, background: syncColors[syncState] || "#16a34a", boxShadow: `0 0 0 4px ${(syncColors[syncState] || "#16a34a")}22`, transition: "all .3s" }} />
         {syncLabels[syncState] || "ซิงค์แล้ว"}
       </div>
+
+      {/* Global Search */}
+      <div style={{ position: "relative", flex: "0 1 280px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", border: `1.5px solid ${searchFocus ? "var(--brand)" : "var(--border)"}`, borderRadius: 11, background: "var(--surface-2)", transition: "border-color 0.2s, box-shadow 0.2s", boxShadow: searchFocus ? "0 0 0 3px color-mix(in srgb,var(--brand) 16%,transparent)" : "none" }}>
+          <Icon name="search" size={15} color="var(--ink-2)" />
+          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
+            onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => { setSearchFocus(false); setSearchQ(""); }, 200)}
+            placeholder="ค้นหาผู้ป่วย (ชื่อ/HN)…"
+            style={{ border: "none", background: "none", outline: "none", fontSize: 13, color: "var(--ink)", fontFamily: "var(--sans)", width: "100%", minWidth: 0 }} />
+          {searchQ && <button onClick={() => setSearchQ("")} style={{ border:"none", background:"none", cursor:"pointer", padding:0, flexShrink:0, display:"grid", placeItems:"center" }}><Icon name="x" size={13} color="var(--ink-2)" /></button>}
+        </div>
+        {searchResults.length > 0 && (
+          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 13, boxShadow: "0 12px 32px rgba(0,0,0,.16)", zIndex: 80, overflow: "hidden", animation: "fadeUp 0.18s ease-out both" }}>
+            {searchResults.map((r) => {
+              const risk = computeRisk(r);
+              const rColors = { high:"#dc2626", medium:"#d97706", low:"#16a34a" };
+              return (
+                <button key={r.hn} onMouseDown={() => { onNavigate && onNavigate({ view:"patient", hn:r.hn }); setSearchQ(""); }} className="acrow"
+                  style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"11px 14px", border:"none", borderBottom:"1px solid var(--border)", background:"none", cursor:"pointer", textAlign:"left", fontFamily:"var(--sans)" }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:rColors[risk.band], flexShrink:0 }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13.5, fontWeight:700, color:"var(--ink)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                    <div style={{ fontSize:11.5, color:"var(--ink-2)", fontFamily:"var(--mono)" }}>HN {r.hn} · CKD {r.ckdStage}</div>
+                  </div>
+                  <Icon name="chevronR" size={14} color="var(--ink-2)" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Dark mode toggle */}
+      <button onClick={onToggleDark} title={currentTheme === "dark" ? "สว่าง" : "มืด"}
+        style={{ width:38, height:38, borderRadius:10, border:"1px solid var(--border)", background:"var(--surface-2)", display:"grid", placeItems:"center", cursor:"pointer", transition:"all 0.2s", flexShrink:0 }}>
+        <span style={{ fontSize:17 }}>{currentTheme === "dark" ? "☀️" : "🌙"}</span>
+      </button>
       <div style={{ position: "relative" }}>
         <button onClick={() => setOpen((o) => !o)} style={{ position: "relative", width: 40, height: 40, borderRadius: 11, border: "1px solid var(--border)", background: "var(--surface)", display: "grid", placeItems: "center", cursor: "pointer" }}>
           <Icon name="bell" size={19} color="var(--ink-2)" />

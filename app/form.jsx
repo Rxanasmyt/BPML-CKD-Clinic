@@ -401,17 +401,48 @@ function DoseBuilder({ value, onChange }) {
 function blankMed() { return { drug: "", strength: "", dose: "", qtyPerDose: "", freqPerDay: "", timing: "", sameAsPrescribed: true, actualQty: "", actualFreq: "", actuallyTaking: "", source: "", remark: "", flags: [] }; }
 
 function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
-  const [f, setF] = React.useState(() => initial ? JSON.parse(JSON.stringify(initial)) : {
-    hn: "", name: "", age: "", sex: "male", ckdStage: "", date: "2026-05-29", scr: "", egfr: "", k: "", na: "",
-    hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
-    bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
-    meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "", drpAcks: {},
-    comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
-    interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
-    pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
+  const DRAFT_KEY = "pharm_ckd_form_draft_v1";
+
+  const [f, setF] = React.useState(() => {
+    // ถ้าเป็น edit ใช้ initial, ถ้าเป็น new ให้ดู draft ก่อน
+    if (initial?.id) return JSON.parse(JSON.stringify(initial));
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (draft && draft._savedAt) return draft;
+    } catch(e) {}
+    return {
+      hn: "", name: "", age: "", sex: "male", ckdStage: "", date: new Date().toISOString().slice(0,10), scr: "", egfr: "", k: "", na: "",
+      hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
+      bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
+      meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "", drpAcks: {},
+      comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
+      interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
+      pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
+    };
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const toggle = (k, val) => setF((p) => ({ ...p, [k]: (p[k] || []).includes(val) ? p[k].filter((x) => x !== val) : [...(p[k] || []), val] }));
+
+  // Autosave draft (new records only, not edits)
+  const [draftSaved, setDraftSaved] = React.useState(false);
+  React.useEffect(() => {
+    if (initial?.id) return; // ไม่ autosave ตอน edit
+    const timer = setTimeout(() => {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...f, _savedAt: Date.now() }));
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 1500);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [f]);
+  function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+
+  // Duplicate visit detection
+  const [dupWarning, setDupWarning] = React.useState(null);
+  React.useEffect(() => {
+    if (!f.hn.trim() || !f.date) { setDupWarning(null); return; }
+    const dup = records.find((r) => r.hn === f.hn.trim() && r.date === f.date && r.id !== initial?.id);
+    setDupWarning(dup || null);
+  }, [f.hn, f.date]);
 
   const [openRecon, setOpenRecon] = React.useState(!!(initial?.discrepancy === "found"));
   const [openFollow, setOpenFollow] = React.useState(!!(initial?.followUp));
@@ -536,6 +567,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     if (!rec.createdBy) rec.createdBy = user.id;
     rec.meds = rec.meds.filter((m) => m.drug.trim());
     rec.meds.forEach((m) => RecentDrugs.record(m.drug));
+    clearDraft();
     setSaved(true);
     setTimeout(() => { setSaving(false); onSave(rec); }, 400);
   }
@@ -615,6 +647,27 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           sub="Best Possible Medication List & Medication Reconciliation"
           action={<button onClick={onCancel} style={ghostBtn}><Icon name="x" size={16} />ยกเลิก</button>}
         />
+
+        {/* Draft autosave indicator */}
+        {!initial?.id && draftSaved && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#16a34a", marginBottom:8, animation:"fadeIn 0.2s ease-out both" }}>
+            <span style={{ width:7, height:7, borderRadius:"50%", background:"#16a34a", flexShrink:0 }} />
+            บันทึก draft อัตโนมัติแล้ว
+          </div>
+        )}
+
+        {/* Duplicate visit warning */}
+        {dupWarning && (
+          <div style={{ marginBottom:14, padding:"12px 16px", background:"#fffbeb", border:"1.5px solid #fbbf24", borderRadius:12, display:"flex", alignItems:"flex-start", gap:10, animation:"fadeUp 0.25s ease-out both" }}>
+            <span style={{ fontSize:20, flexShrink:0 }}>⚠️</span>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:700, fontSize:13.5, color:"#92400e" }}>พบ Visit ของผู้ป่วยนี้ในวันเดียวกันแล้ว</div>
+              <div style={{ fontSize:12.5, color:"#78350f", marginTop:2 }}>
+                {dupWarning.name} · HN {dupWarning.hn} · วันที่ {fmtDate(dupWarning.date)} · บันทึกโดย {dupWarning.pharmacist || "–"}
+              </div>
+            </div>
+          </div>
+        )}
 
         <FormProgress active={activeStep} onStepClick={scrollToStep} />
 
