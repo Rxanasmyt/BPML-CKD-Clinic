@@ -668,6 +668,9 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
       {/* ── ROW 4: Population Analytics ── */}
       <PopulationAnalytics scope={scope} records={records} />
 
+      {/* ── SECTION HEADER: DRP & Risk Analysis ── */}
+      <DRPRiskAnalysis scope={scope} onNavigate={onGoPatients} />
+
       {/* ── ROW 5: High-risk Table ── */}
       {highList.length > 0 && (
         <div className="card-modern stagger"
@@ -973,4 +976,505 @@ function Empty({ text }) {
 const primaryBtn = { display:"inline-flex", alignItems:"center", gap:8, padding:"11px 18px", background:"var(--brand)", color:"#fff", border:"none", borderRadius:11, fontSize:14.5, fontWeight:700, cursor:"pointer", fontFamily:"var(--sans)", whiteSpace:"nowrap", flexShrink:0 };
 const followBtn  = { padding:"7px 12px", background:"var(--surface-2)", color:"var(--brand-deep)", border:"1px solid var(--border)", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"var(--sans)" };
 
-Object.assign(window, { Dashboard, PageHead, Kpi, Card, Empty, primaryBtn, followBtn, latestPerPatient, PopulationAnalytics, useCounter, useMounted, addRipple });
+/* =========================================================================
+   DRPRiskAnalysis — Sections A–F
+   ========================================================================= */
+function DRPRiskAnalysis({ scope, onNavigate }) {
+  const mounted = useMounted(120);
+
+  /* ── Pre-compute per-patient latest record ── */
+  const latestMap = React.useMemo(() => {
+    const m = {};
+    (scope || []).forEach((r) => {
+      if (!m[r.hn] || (r.date || "") > (m[r.hn].date || "")) m[r.hn] = r;
+    });
+    return m;
+  }, [scope]);
+  const latestList = Object.values(latestMap);
+
+  /* ── Section A: DRP Alert Summary ── */
+  const drpAlertStats = React.useMemo(() => {
+    let ddiCount = 0, doseCount = 0, contraCount = 0;
+    latestList.forEach((rec) => {
+      const meds = rec.meds || [];
+      const egfr = rec.egfr;
+      let hasDDI = false, hasDose = false, hasContra = false;
+      if (meds.length >= 2) {
+        const ddis = checkDDI(meds);
+        if (ddis.some((d) => d.severity === "major")) hasDDI = true;
+      }
+      meds.forEach((m) => {
+        if (!m.name) return;
+        const da = checkDoseAdjustment(m.name, egfr);
+        if (da) hasDose = true;
+        const cc = checkContraindicated(m.name, egfr);
+        if (cc && cc.level === "contraindicated") hasContra = true;
+      });
+      if (hasDDI) ddiCount++;
+      if (hasDose) doseCount++;
+      if (hasContra) contraCount++;
+    });
+    return { ddiCount, doseCount, contraCount };
+  }, [latestList]);
+
+  /* ── Section B: High-Risk Drug Top 5 ── */
+  const topDrugs = React.useMemo(() => {
+    const tally = {};
+    latestList.forEach((rec) => {
+      const meds = rec.meds || [];
+      const egfr = rec.egfr;
+      if (meds.length >= 2) {
+        const ddis = checkDDI(meds);
+        ddis.filter((d) => d.severity === "major").forEach((d) => {
+          [d.drugA, d.drugB].forEach((name) => {
+            if (!name) return;
+            if (!tally[name]) tally[name] = { count: 0, types: new Set() };
+            tally[name].count++;
+            tally[name].types.add("DDI");
+          });
+        });
+      }
+      meds.forEach((m) => {
+        if (!m.name) return;
+        const da = checkDoseAdjustment(m.name, egfr);
+        if (da) {
+          if (!tally[m.name]) tally[m.name] = { count: 0, types: new Set() };
+          tally[m.name].count++;
+          tally[m.name].types.add("ปรับขนาด");
+        }
+        const cc = checkContraindicated(m.name, egfr);
+        if (cc && cc.level === "contraindicated") {
+          if (!tally[m.name]) tally[m.name] = { count: 0, types: new Set() };
+          tally[m.name].count++;
+          tally[m.name].types.add("ห้ามใช้");
+        }
+      });
+    });
+    return Object.entries(tally)
+      .map(([name, { count, types }]) => ({ name, count, types: [...types] }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [latestList]);
+
+  /* ── Section C: eGFR Progression Matrix ── */
+  const egfrMatrix = React.useMemo(() => {
+    const byHn = {};
+    (scope || []).forEach((r) => {
+      if (!byHn[r.hn]) byHn[r.hn] = [];
+      byHn[r.hn].push(r);
+    });
+    return Object.entries(byHn).map(([hn, recs]) => {
+      const sorted = [...recs].filter((r) => r.date && r.egfr).sort((a, b) => a.date.localeCompare(b.date));
+      const latest = sorted.at(-1);
+      if (!latest) return null;
+      if (sorted.length < 2) {
+        return { hn, name: latest.name, egfr: latest.egfr, trend: "ข้อมูลไม่พอ", slope: null };
+      }
+      const prev = sorted.at(-2);
+      const daysDiff = (new Date(latest.date) - new Date(prev.date)) / 86400000;
+      const months = daysDiff / 30.44;
+      const slope = months > 0 ? (parseFloat(latest.egfr) - parseFloat(prev.egfr)) / months : 0;
+      let trend = "คงที่";
+      if (slope > 1) trend = "ดีขึ้น";
+      else if (slope < -1) trend = "แย่ลง";
+      return { hn, name: latest.name, egfr: latest.egfr, trend, slope: Math.round(slope * 10) / 10 };
+    }).filter(Boolean);
+  }, [scope]);
+
+  /* ── Section D: Polypharmacy ── */
+  const polypharmacy = React.useMemo(() => {
+    const poly = latestList.filter((r) => (r.meds || []).length >= 5);
+    const pct = latestList.length ? Math.round((poly.length / latestList.length) * 100) : 0;
+    return { poly, pct, total: latestList.length };
+  }, [latestList]);
+
+  /* ── Section E: Electrolyte Watch ── */
+  const electrolyteWatch = React.useMemo(() => {
+    const hyperK = [], acidosis = [], both = [];
+    latestList.forEach((r) => {
+      const k = parseFloat(r.k);
+      const hco3 = parseFloat(r.hco3);
+      const isHyperK = !isNaN(k) && k > 5.5;
+      const isAcidosis = !isNaN(hco3) && hco3 < 18;
+      if (isHyperK && isAcidosis) both.push(r.name || r.hn);
+      else if (isHyperK) hyperK.push(r.name || r.hn);
+      else if (isAcidosis) acidosis.push(r.name || r.hn);
+    });
+    return { hyperK, acidosis, both };
+  }, [latestList]);
+  const hasCritical = electrolyteWatch.hyperK.length + electrolyteWatch.acidosis.length + electrolyteWatch.both.length > 0;
+
+  /* ── Section F: Monthly Visit Volume ── */
+  const monthlyVolume = React.useMemo(() => {
+    const today = new Date("2026-06-06");
+    const buckets = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today); d.setDate(1); d.setMonth(d.getMonth() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      buckets.push({ key, label: TH_MONTHS[d.getMonth()], count: 0, isCurrent: i === 0 });
+    }
+    (scope || []).forEach((r) => {
+      if (!r.date) return;
+      const key = r.date.slice(0, 7);
+      const b = buckets.find((bk) => bk.key === key);
+      if (b) b.count++;
+    });
+    return buckets;
+  }, [scope]);
+  const maxVolume = Math.max(...monthlyVolume.map((b) => b.count), 1);
+
+  const trendColors = {
+    "ดีขึ้น": "#16a34a",
+    "คงที่": "#6b7280",
+    "แย่ลง": "#dc2626",
+    "ข้อมูลไม่พอ": "#9ca3af",
+  };
+  const trendArrow = { "ดีขึ้น": "↑", "คงที่": "→", "แย่ลง": "↓", "ข้อมูลไม่พอ": "?" };
+
+  /* ── Badge colors for Section B ── */
+  const typeBadgeColor = { "DDI": "#dc2626", "ห้ามใช้": "#ea580c", "ปรับขนาด": "#d97706" };
+  const topMax = topDrugs[0]?.count || 1;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* Inline keyframes */}
+      <style>{`
+        @keyframes pulseRed { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+        @keyframes barGrow { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+        @keyframes countUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes slideLeft { from{opacity:0;transform:translateX(-24px)} to{opacity:1;transform:translateX(0)} }
+        @keyframes scaleInChip { from{opacity:0;transform:scale(.7)} to{opacity:1;transform:scale(1)} }
+        @keyframes fadeUpRow { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes svgBarGrow { from{height:0;y:calc(100% - 0px)} to{} }
+      `}</style>
+
+      {/* ── Section Header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <div style={{ width: 4, height: 22, borderRadius: 2,
+          background: "linear-gradient(180deg,#dc2626,#d97706)",
+          boxShadow: "0 2px 8px rgba(220,38,38,.4)" }} />
+        <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--ink)", margin: 0 }}>📊 วิเคราะห์ DRP & ความเสี่ยง</h2>
+        <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>Drug-related problems & Clinical risk analytics</span>
+      </div>
+
+      {/* ── Row A+B: DRP Alert Summary + High-Risk Drugs ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }} className="dash-grid">
+
+        {/* A: DRP Alert Summary Card */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#dc262622,#dc262644)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>🚨</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>DRP Alert Summary</h3>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {[
+              { label: "DDI Major", count: drpAlertStats.ddiCount, color: "#dc2626", bg: "#fef2f2", unit: "ราย" },
+              { label: "ปรับขนาด", count: drpAlertStats.doseCount, color: "#d97706", bg: "#fffbeb", unit: "ราย" },
+              { label: "ห้ามใช้", count: drpAlertStats.contraCount, color: "#ea580c", bg: "#fff7ed", unit: "ราย" },
+            ].map(({ label, count, color, bg, unit }, i) => {
+              const animCount = useCounter(mounted ? count : 0, 900);
+              return (
+                <div key={label} onClick={() => onNavigate && onNavigate()}
+                  style={{ flex: 1, minWidth: 90, padding: "14px 16px", background: bg,
+                    border: `1.5px solid ${color}33`, borderRadius: 14, cursor: "pointer",
+                    animation: `scaleInChip 0.4s cubic-bezier(0.34,1.4,0.64,1) ${i * 0.09}s both`,
+                    transition: "transform 0.15s, box-shadow 0.15s",
+                    boxShadow: `0 2px 10px ${color}18` }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 18px ${color}33`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 2px 10px ${color}18`; }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 32, fontWeight: 800, color, lineHeight: 1,
+                    animation: `countUp 0.5s ease-out ${0.2 + i * 0.09}s both` }}>{animCount}</div>
+                  <div style={{ fontSize: 11.5, color, fontWeight: 700, marginTop: 4 }}>{label}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--ink-2)", marginTop: 2 }}>{unit}</div>
+                </div>
+              );
+            })}
+          </div>
+          {latestList.length === 0 && <Empty text="ยังไม่มีข้อมูล" />}
+        </div>
+
+        {/* B: High-Risk Drug Top 5 */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#d9770622,#d9770644)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>💊</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>ยาเสี่ยงสูง Top 5</h3>
+          </div>
+          {topDrugs.length ? topDrugs.map((drug, i) => {
+            const barPct = Math.round((drug.count / topMax) * 100);
+            return (
+              <div key={drug.name} style={{ marginBottom: 11,
+                animation: `slideLeft 0.45s cubic-bezier(0.22,1,0.36,1) ${i * 0.07}s both` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <span style={{ fontSize: 12.5, color: "var(--ink)", fontWeight: 500, flex: 1, minWidth: 0,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{drug.name}</span>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: 8, flexShrink: 0 }}>
+                    {drug.types.map((t) => (
+                      <span key={t} style={{ fontSize: 9.5, fontWeight: 700, color: "#fff",
+                        background: typeBadgeColor[t] || "#6b7280", padding: "2px 6px",
+                        borderRadius: 99 }}>{t}</span>
+                    ))}
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700,
+                      color: "#dc2626", marginLeft: 4 }}>{drug.count}</span>
+                  </div>
+                </div>
+                <div style={{ height: 9, borderRadius: 99, background: "var(--surface-2)", overflow: "hidden",
+                  transformOrigin: "left" }}>
+                  <div style={{ height: "100%",
+                    width: `${mounted ? barPct : 0}%`,
+                    background: `linear-gradient(90deg,#dc262688,#dc2626)`,
+                    borderRadius: 99,
+                    transition: `width 0.65s cubic-bezier(0.34,1.1,0.64,1) ${i * 0.07 + 0.15}s`,
+                    boxShadow: "0 0 8px #dc262655" }} />
+                </div>
+              </div>
+            );
+          }) : <Empty text="ยังไม่พบยาเสี่ยงสูง 🎉" />}
+        </div>
+      </div>
+
+      {/* ── Row C+D: eGFR Matrix + Polypharmacy ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, marginBottom: 16 }} className="dash-grid">
+
+        {/* C: eGFR Progression Matrix */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#0d948822,#0d948844)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>📉</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0, flex: 1 }}>eGFR Progression Matrix</h3>
+            <span style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{egfrMatrix.length} ราย</span>
+          </div>
+          <div style={{ maxHeight: 280, overflowY: "auto", marginRight: -4, paddingRight: 4 }}>
+            {egfrMatrix.length ? egfrMatrix.map((row, i) => {
+              const col = trendColors[row.trend] || "#9ca3af";
+              const arrow = trendArrow[row.trend] || "?";
+              return (
+                <div key={row.hn} onClick={() => onNavigate && onNavigate()} className="hrow"
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 6px",
+                    borderBottom: "1px solid var(--border)", cursor: "pointer", borderLeft: `3px solid ${col}`,
+                    animation: `fadeUpRow 0.3s ease-out ${i * 0.05}s both` }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: `${col}18`,
+                    display: "grid", placeItems: "center", flexShrink: 0, fontSize: 16, color: col, fontWeight: 700 }}>
+                    {arrow}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--ink)", whiteSpace: "nowrap",
+                      overflow: "hidden", textOverflow: "ellipsis" }}>{row.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-2)" }}>HN {row.hn}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 15, fontWeight: 700, color: col }}>
+                      {row.egfr}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: col, fontWeight: 600 }}>
+                      {row.trend}{row.slope !== null ? ` (${row.slope > 0 ? "+" : ""}${row.slope}/mo)` : ""}
+                    </div>
+                  </div>
+                </div>
+              );
+            }) : <Empty text="ยังไม่มีข้อมูลการติดตาม" />}
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+            {[["ดีขึ้น","#16a34a","↑"],["คงที่","#6b7280","→"],["แย่ลง","#dc2626","↓"],["ข้อมูลไม่พอ","#9ca3af","?"]].map(([label,color,icon]) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                <span style={{ color, fontWeight: 700 }}>{icon}</span>
+                <span style={{ color: "var(--ink-2)" }}>{label}: {egfrMatrix.filter((r)=>r.trend===label).length}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* D: Polypharmacy Alert */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#7c3aed22,#7c3aed44)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>💊</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>Polypharmacy Alert</h3>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14 }}>
+            <DonutChart
+              center={polypharmacy.poly.length}
+              label="poly"
+              segments={[
+                { value: polypharmacy.poly.length, color: "#7c3aed" },
+                { value: Math.max(0, polypharmacy.total - polypharmacy.poly.length), color: "var(--border)" },
+              ]} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 34, fontWeight: 800, color: "#7c3aed", lineHeight: 1,
+                animation: mounted ? `countUp 0.5s ease-out both` : undefined }}>
+                {polypharmacy.pct}<span style={{ fontSize: 16, fontWeight: 500, color: "var(--ink-2)" }}>%</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 4 }}>
+                {polypharmacy.poly.length} / {polypharmacy.total} ราย<br />
+                <span style={{ fontWeight: 600, color: "#7c3aed" }}>(≥5 รายการยา)</span>
+              </div>
+            </div>
+          </div>
+          {polypharmacy.poly.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 90, overflowY: "auto" }}>
+              {polypharmacy.poly.map((r, i) => (
+                <span key={r.hn} style={{ fontSize: 11.5, padding: "3px 10px", background: "#7c3aed18",
+                  color: "#7c3aed", borderRadius: 99, fontWeight: 600,
+                  animation: `scaleInChip 0.35s cubic-bezier(0.34,1.4,0.64,1) ${i * 0.05}s both` }}>
+                  {r.name || r.hn}
+                </span>
+              ))}
+            </div>
+          )}
+          {polypharmacy.poly.length === 0 && <Empty text="ไม่พบ Polypharmacy 🎉" />}
+        </div>
+      </div>
+
+      {/* ── Row E+F: Electrolyte Watch + Monthly Volume ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 16, marginBottom: 16 }} className="dash-grid">
+
+        {/* E: Electrolyte Watch */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#dc262622,#dc262644)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>⚡</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0, flex: 1 }}>Electrolyte Watch</h3>
+            {hasCritical && (
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#dc2626",
+                animation: "pulseRed 1.2s ease-in-out infinite",
+                boxShadow: "0 0 6px #dc2626" }} />
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            {[
+              { label: "Hyperkalemia", sub: "K⁺ > 5.5", count: electrolyteWatch.hyperK.length + electrolyteWatch.both.length, color: "#dc2626", bg: "#fef2f2" },
+              { label: "Acidosis", sub: "HCO₃ < 18", count: electrolyteWatch.acidosis.length + electrolyteWatch.both.length, color: "#d97706", bg: "#fffbeb" },
+            ].map(({ label, sub, count, color, bg }, i) => {
+              const animCount = useCounter(mounted ? count : 0, 800);
+              return (
+                <div key={label} style={{ flex: 1, padding: "12px 14px", background: bg,
+                  border: `1.5px solid ${color}33`, borderRadius: 12,
+                  animation: `scaleInChip 0.4s cubic-bezier(0.34,1.4,0.64,1) ${i * 0.08}s both` }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 28, fontWeight: 800, color, lineHeight: 1 }}>{animCount}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color, marginTop: 3 }}>{label}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--ink-2)" }}>{sub}</div>
+                </div>
+              );
+            })}
+          </div>
+          {electrolyteWatch.both.length > 0 && (
+            <div style={{ padding: "8px 12px", background: "#fef2f2", borderRadius: 10, marginBottom: 10,
+              border: "1.5px solid #fca5a5" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#dc2626", marginBottom: 4 }}>
+                ⚠️ ทั้ง 2 ภาวะ ({electrolyteWatch.both.length} ราย)
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {electrolyteWatch.both.map((name, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: "2px 8px", background: "#dc262618",
+                    color: "#dc2626", borderRadius: 99 }}>{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {[
+            { list: electrolyteWatch.hyperK, label: "K⁺ สูง", color: "#dc2626" },
+            { list: electrolyteWatch.acidosis, label: "Acidosis", color: "#d97706" },
+          ].map(({ list, label, color }) => list.length > 0 && (
+            <div key={label} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--ink-2)", marginBottom: 4, fontWeight: 600 }}>{label}:</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {list.map((name, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: "2px 8px", background: `${color}18`,
+                    color, borderRadius: 99 }}>{name}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          {!hasCritical && <Empty text="ค่าเกลือแร่ปกติทุกราย ✅" />}
+        </div>
+
+        {/* F: Monthly Visit Volume */}
+        <div className="card-modern" style={{ background: "var(--surface)", borderRadius: 18, padding: "22px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#0284c722,#0284c744)",
+              display: "grid", placeItems: "center" }}>
+              <span style={{ fontSize: 17 }}>📆</span>
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>ปริมาณการเยี่ยมรายเดือน</h3>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+            {/* SVG Bar Chart */}
+            <svg viewBox="0 0 360 130" style={{ flex: 1, display: "block", overflow: "visible" }}>
+              {/* Y-axis reference lines */}
+              {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
+                const y = 110 - frac * 90;
+                const val = Math.round(frac * maxVolume);
+                return (
+                  <g key={frac}>
+                    <line x1="32" x2="356" y1={y} y2={y} stroke="var(--border)" strokeWidth="1" opacity="0.6" />
+                    <text x="28" y={y + 3} textAnchor="end"
+                      style={{ fontSize: 8, fill: "var(--ink-2)", fontFamily: "monospace" }}>{val}</text>
+                  </g>
+                );
+              })}
+              {/* Bars */}
+              {monthlyVolume.map((b, i) => {
+                const barW = 40, gap = 12;
+                const x = 36 + i * (barW + gap);
+                const barH = maxVolume > 0 ? Math.max(4, (b.count / maxVolume) * 90) : 4;
+                const y = 110 - (mounted ? barH : 0);
+                const color = b.isCurrent ? "var(--brand)" : "#0d948855";
+                return (
+                  <g key={b.key}>
+                    <rect x={x} y={mounted ? y : 110} width={barW} height={mounted ? barH : 0} rx="5"
+                      fill={color}
+                      style={{ transition: `y 0.7s cubic-bezier(0.34,1.1,0.64,1) ${i * 0.07}s, height 0.7s cubic-bezier(0.34,1.1,0.64,1) ${i * 0.07}s`,
+                        filter: b.isCurrent ? "drop-shadow(0 0 6px rgba(13,148,136,.5))" : "none" }} />
+                    {b.count > 0 && (
+                      <text x={x + barW / 2} y={mounted ? y - 4 : 106} textAnchor="middle"
+                        style={{ fontSize: 9.5, fill: b.isCurrent ? "var(--brand-deep)" : "var(--ink-2)",
+                          fontFamily: "monospace", fontWeight: 700,
+                          transition: `y 0.7s cubic-bezier(0.34,1.1,0.64,1) ${i * 0.07}s` }}>
+                        {b.count}
+                      </text>
+                    )}
+                    <text x={x + barW / 2} y={124} textAnchor="middle"
+                      style={{ fontSize: 9.5, fill: b.isCurrent ? "var(--brand-deep)" : "var(--ink-2)",
+                        fontFamily: "monospace", fontWeight: b.isCurrent ? 700 : 400 }}>
+                      {b.label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
+              รวม 6 เดือน: <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--ink)" }}>
+                {monthlyVolume.reduce((a, b) => a + b.count, 0)}
+              </span> บันทึก
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                <div style={{ width: 12, height: 8, borderRadius: 2, background: "var(--brand)" }} />
+                <span style={{ color: "var(--ink-2)" }}>เดือนปัจจุบัน</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                <div style={{ width: 12, height: 8, borderRadius: 2, background: "#0d948855" }} />
+                <span style={{ color: "var(--ink-2)" }}>เดือนก่อน</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Dashboard, PageHead, Kpi, Card, Empty, primaryBtn, followBtn, latestPerPatient, PopulationAnalytics, DRPRiskAnalysis, useCounter, useMounted, addRipple });
