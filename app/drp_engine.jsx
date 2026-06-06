@@ -58,7 +58,7 @@ function classOf(name) {
 
 // drugMatches: does this drug name/class match a pattern?
 function dm(drugName, pattern) {
-  if (!drugName || !pattern) return false;
+  if (typeof drugName !== "string" || !drugName || !pattern) return false;
   const n = drugName.toLowerCase();
   const p = pattern.toLowerCase();
   const c = classOf(drugName);
@@ -722,22 +722,27 @@ const DDI_SIMPLE = [
 
 function checkDDI(drugList) {
   if (!drugList || drugList.length < 2) return [];
-  const names = drugList.map(d => (d.name || d || "").toLowerCase().trim()).filter(Boolean);
+  // เก็บทั้งชื่อ (lowercase สำหรับ match) และ label (สำหรับแสดงผล) โดย index ตรงกัน
+  const items = drugList.map(d => {
+    const raw = (d && typeof d === "object") ? d.name : d;
+    const label = (typeof raw === "string" ? raw : "").trim();
+    return { name: label.toLowerCase(), label };
+  }).filter(x => x.name);
   const results = [];
   const seen = new Set();
   DDI_SIMPLE.forEach(rule => {
-    for (let i = 0; i < names.length; i++) {
-      for (let j = i + 1; j < names.length; j++) {
-        const na = names[i], nb = names[j];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const na = items[i].name, nb = items[j].name;
         const aMatchA = rule.a.some(p => na.includes(p.toLowerCase()));
         const bMatchB = rule.b.some(p => nb.includes(p.toLowerCase()));
         const aMatchB = rule.b.some(p => na.includes(p.toLowerCase()));
         const bMatchA = rule.a.some(p => nb.includes(p.toLowerCase()));
         if ((aMatchA && bMatchB) || (aMatchB && bMatchA)) {
-          const key = rule.severity + "|" + [drugList[i].name||names[i], drugList[j].name||names[j]].sort().join("+");
+          const key = rule.severity + "|" + [items[i].label, items[j].label].sort().join("+");
           if (!seen.has(key)) {
             seen.add(key);
-            results.push({ drugA: drugList[i].name||names[i], drugB: drugList[j].name||names[j], severity: rule.severity, message: rule.message });
+            results.push({ drugA: items[i].label, drugB: items[j].label, severity: rule.severity, message: rule.message });
           }
         }
       }
@@ -807,7 +812,7 @@ const DOSE_ADJ_DB = [
 ];
 
 function checkDoseAdjustment(drugName, egfr) {
-  if (!drugName || !egfr) return null;
+  if (typeof drugName !== "string" || !drugName || !egfr) return null;
   const dn = drugName.toLowerCase().trim();
   const eg = parseFloat(egfr);
   if (isNaN(eg)) return null;
@@ -880,7 +885,7 @@ const CONTRA_DB = [
 ];
 
 function checkContraindicated(drugName, egfr) {
-  if (!drugName || !egfr) return null;
+  if (typeof drugName !== "string" || !drugName || !egfr) return null;
   const dn = drugName.toLowerCase().trim();
   const eg = parseFloat(egfr);
   if (isNaN(eg)) return null;
