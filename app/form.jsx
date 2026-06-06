@@ -462,9 +462,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     }
   }, [f.scr, f.age, f.sex, egfrManual]);
 
-  // Feature 3: copy meds modal state
+  // Feature 3 + 5: copy from last visit modal state
   const [copyModalVisit, setCopyModalVisit] = React.useState(null);
   const [copySelection, setCopySelection] = React.useState({});
+  const [copyLab, setCopyLab] = React.useState(true);
+  const [copyAllergy, setCopyAllergy] = React.useState(true);
 
   // HN lookup
   function onHnChange(hn) {
@@ -488,19 +490,38 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     setHnSuggest(null);
   }
 
-  // Feature 3: open copy modal
+  // Feature 3 + 5: open copy modal (enhanced)
   function openCopyModal(visit) {
     const meds = visit.meds || [];
     const sel = {};
     meds.forEach((_, idx) => { sel[idx] = true; });
     setCopyModalVisit(visit);
     setCopySelection(sel);
+    setCopyLab(true);
+    setCopyAllergy(true);
   }
 
   function applyCopySelection() {
     if (!copyModalVisit) return;
     const meds = (copyModalVisit.meds || []).filter((_, idx) => copySelection[idx]);
-    if (meds.length) setF((p) => ({ ...p, meds: meds.map((m) => ({ ...m })) }));
+    setF((p) => {
+      const next = { ...p };
+      if (meds.length) next.meds = meds.map((m) => ({ ...m }));
+      if (copyLab) {
+        // Feature 5: copy lab values
+        if (copyModalVisit.egfr) next.egfr = copyModalVisit.egfr;
+        if (copyModalVisit.scr)  next.scr  = copyModalVisit.scr;
+        if (copyModalVisit.k)    next.k    = copyModalVisit.k;
+        if (copyModalVisit.hb)   next.hb   = copyModalVisit.hb;
+        if (copyModalVisit.hco3) next.hco3 = copyModalVisit.hco3;
+      }
+      if (copyAllergy && copyModalVisit.allergy) next.allergy = copyModalVisit.allergy;
+      // Feature 5: copy OTC items
+      if (copyModalVisit.otcItems && copyModalVisit.otcItems.length) {
+        next.otcItems = (copyModalVisit.otcItems || []).map(o => ({ ...o }));
+      }
+      return next;
+    });
     setCopyModalVisit(null);
   }
 
@@ -591,10 +612,24 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
             <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 18 }}>📋</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)" }}>เลือกยาที่ต้องการคัดลอก</div>
-                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>จาก visit {fmtDate(copyModalVisit.date)} · {(copyModalVisit.meds || []).length} รายการ</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)" }}>พบข้อมูลล่าสุด {fmtDate(copyModalVisit.date)}</div>
+                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>{(copyModalVisit.meds || []).length} รายการยา · เลือกสิ่งที่ต้องการคัดลอก</div>
               </div>
               <button type="button" onClick={() => setCopyModalVisit(null)} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><Icon name="x" size={18} color="var(--ink-2)" /></button>
+            </div>
+            {/* Feature 5: Copy options */}
+            <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink)", cursor: "pointer" }}>
+                <CheckBox on={copyLab} onClick={() => setCopyLab(o => !o)} />
+                Lab (eGFR, Cr, K, Hb, HCO₃)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--ink)", cursor: "pointer" }}>
+                <CheckBox on={copyAllergy} onClick={() => setCopyAllergy(o => !o)} />
+                การแพ้ยา (Allergy)
+              </label>
+              {(copyModalVisit.otcItems || []).length > 0 && (
+                <span style={{ fontSize: 12, color: "var(--ink-2)", alignSelf: "center" }}>+ OTC/สมุนไพร {(copyModalVisit.otcItems || []).length} รายการ (คัดลอกอัตโนมัติ)</span>
+              )}
             </div>
             <div style={{ overflowY: "auto", flex: 1, padding: "12px 20px" }}>
               {/* select-all row */}
@@ -760,6 +795,9 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
             <RenalDoseCalc age={f.age} scr={f.scr} sex={f.sex} onFill={(v) => { set("egfr", v); setEgfrManual(true); }} />
 
+            {/* Feature 6: Lab Trend Sparkline */}
+            <LabSparkline hn={f.hn} records={records} currentEgfr={f.egfr} currentCr={f.scr} />
+
             {/* K+ StepInput */}
             <div style={{ flex: "0 0 130px" }}>
               <StepInput label="K⁺" unit="mmol/L" value={f.k} onChange={(v) => set("k", v)} step={0.1} min={1.0} max={9.9}
@@ -914,6 +952,32 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <MedSearchAdd onAdd={addDrugFromSearch} onAddBlank={addMed}
             existing={f.meds.map((m) => m.drug)} />
 
+          {/* Feature 1: DDI Alerts */}
+          {React.useMemo(() => {
+            const drugList = f.meds.filter(m => m.drug && m.drug.trim()).map(m => ({ name: m.drug }));
+            if (drugList.length < 2 || typeof window.checkDDI !== "function") return null;
+            const ddis = window.checkDDI(drugList);
+            if (!ddis.length) return null;
+            const majors = ddis.filter(d => d.severity === "major");
+            const mods = ddis.filter(d => d.severity === "moderate");
+            return (
+              <div style={{ marginBottom: 12 }}>
+                {majors.map((d, i) => (
+                  <div key={"maj-" + i} style={{ marginBottom: 6, padding: "10px 13px", background: "#fef2f2", border: "1.5px solid #fca5a5", borderRadius: 10, fontSize: 12.5, color: "#b91c1c", fontWeight: 600 }}>
+                    🔴 DDI Major: <strong>{d.drugA}</strong> + <strong>{d.drugB}</strong><br />
+                    <span style={{ fontWeight: 400 }}>{d.message}</span>
+                  </div>
+                ))}
+                {mods.map((d, i) => (
+                  <div key={"mod-" + i} style={{ marginBottom: 6, padding: "10px 13px", background: "#fffbeb", border: "1.5px solid #fcd34d", borderRadius: 10, fontSize: 12.5, color: "#92400e", fontWeight: 600 }}>
+                    🟡 DDI Moderate: <strong>{d.drugA}</strong> + <strong>{d.drugB}</strong><br />
+                    <span style={{ fontWeight: 400 }}>{d.message}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          }, [f.meds])}
+
           {/* Added medication cards */}
           {f.meds.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
@@ -1021,6 +1085,9 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           เภสัชกรผู้บันทึก: <strong style={{ color: "var(--ink)" }}>{f.pharmacist}</strong>
           <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 12 }}>{f.time || "บันทึกเวลาอัตโนมัติ"}</span>
         </div>
+
+        {/* Feature 4: DRP Summary Card */}
+        <DrpSummaryCard meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} />
       </div>
 
       {/* sticky bottom bar */}
@@ -1396,6 +1463,21 @@ function MedCard({ i, m, setMed, setMedFields, egfr, del, allergyConflict }) {
   const danger = (m.flags || []).includes("contra") || (m.flags || []).includes("nephrotoxic");
   const accent = hasConflict || danger ? "#dc2626" : "var(--brand)";
 
+  // Feature 2: Dose adjustment alert
+  const doseAdj = React.useMemo(() => {
+    if (!m.drug || !egfr || typeof window.checkDoseAdjustment !== "function") return null;
+    return window.checkDoseAdjustment(m.drug, egfr);
+  }, [m.drug, egfr]);
+
+  // Feature 3: Contraindication check
+  const contraChk = React.useMemo(() => {
+    if (!m.drug || !egfr || typeof window.checkContraindicated !== "function") return null;
+    return window.checkContraindicated(m.drug, egfr);
+  }, [m.drug, egfr]);
+
+  const hasDoseAlert = doseAdj !== null;
+  const hasContraAlert = contraChk !== null;
+
   return (
     <div style={{
       border: `1px solid ${hasConflict ? "#fca5a5" : "var(--border)"}`,
@@ -1419,9 +1501,27 @@ function MedCard({ i, m, setMed, setMedFields, egfr, del, allergyConflict }) {
               onChange={(e) => setMed(i, "drug", e.target.value)} placeholder="ชื่อยา (กรอกเอง)…" />
           )}
           {info && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "var(--brand-soft)", color: "var(--brand-deep)", border: "1px solid color-mix(in srgb,var(--brand) 30%,transparent)" }}>{info.cls}</span>}
+          {/* Feature 3: Contraindicated badge */}
+          {hasContraAlert && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: contraChk.level === "contraindicated" ? "#fef2f2" : "#fffbeb", color: contraChk.level === "contraindicated" ? "#b91c1c" : "#b45309", border: `1px solid ${contraChk.level === "contraindicated" ? "#fca5a5" : "#fcd34d"}`, flexShrink: 0 }}>
+              {contraChk.level === "contraindicated" ? "⛔ ห้ามใช้" : "⚠️ ระวัง"}
+            </span>
+          )}
           <span style={{ display: "flex", gap: 5, marginLeft: "auto", flexShrink: 0 }}>{(m.flags || []).map((fl) => <FlagDot key={fl} fl={fl} />)}</span>
           <button type="button" onClick={del} title="ลบรายการนี้" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-2)", padding: 4, flexShrink: 0 }}><Icon name="x" size={17} /></button>
         </div>
+        {/* Feature 3: Contraindication detail alert */}
+        {hasContraAlert && (
+          <div style={{ marginBottom: 8, padding: "7px 10px", borderRadius: 7, background: contraChk.level === "contraindicated" ? "#fef2f2" : "#fffbeb", border: `1px solid ${contraChk.level === "contraindicated" ? "#fca5a5" : "#fcd34d"}`, fontSize: 12, color: contraChk.level === "contraindicated" ? "#b91c1c" : "#92400e", fontWeight: 600 }}>
+            {contraChk.level === "contraindicated" ? "⛔" : "⚠️"} {contraChk.message}
+          </div>
+        )}
+        {/* Feature 2: Dose adjustment alert */}
+        {hasDoseAlert && (
+          <div style={{ marginBottom: 8, padding: "7px 10px", borderRadius: 7, background: doseAdj.level === "avoid" ? "#fef2f2" : "#fffbeb", border: `1px solid ${doseAdj.level === "avoid" ? "#fca5a5" : "#fcd34d"}`, fontSize: 12, color: doseAdj.level === "avoid" ? "#b91c1c" : "#92400e", fontWeight: 600 }}>
+            💊 ปรับขนาด: {doseAdj.message}
+          </div>
+        )}
 
         {/* Body — strength + structured dose */}
         <div style={{ paddingLeft: 33 }}>
@@ -1916,6 +2016,169 @@ function RenalDoseCalc({ age, scr, sex, onFill }) {
         </div>
       ) : (
         <div style={{ fontSize: 12, color: "var(--ink-2)", padding: "8px 0" }}>กรอก Scr, อายุ และเพศเพื่อคำนวณ CKD-EPI 2021</div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Feature 6: Lab Sparkline ---------- */
+function LabSparkline({ hn, records, currentEgfr, currentCr }) {
+  const history = React.useMemo(() => {
+    if (!hn || !hn.trim()) return [];
+    return (records || [])
+      .filter(r => r.hn === hn.trim() && r.egfr)
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+      .slice(-3)
+      .map(r => ({ date: r.date, egfr: parseFloat(r.egfr) }));
+  }, [hn, records]);
+
+  const cur = parseFloat(currentEgfr);
+  const allPts = [...history, ...(cur > 0 ? [{ date: "ปัจจุบัน", egfr: cur, current: true }] : [])];
+
+  if (allPts.length < 2) return null;
+
+  const W = 140, H = 48, PAD = 6;
+  const egfrs = allPts.map(p => p.egfr);
+  const minV = Math.min(...egfrs), maxV = Math.max(...egfrs);
+  const range = maxV - minV || 1;
+
+  const pts = allPts.map((p, i) => ({
+    x: PAD + (i / (allPts.length - 1)) * (W - PAD * 2),
+    y: PAD + (1 - (p.egfr - minV) / range) * (H - PAD * 2),
+    ...p,
+  }));
+
+  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+
+  // Trend detection
+  const last = egfrs[egfrs.length - 1];
+  const first = egfrs[0];
+  const diff = last - first;
+  const trend = diff < -3 ? "down" : diff > 3 ? "up" : "stable";
+  const trendIcon = trend === "down" ? "↓" : trend === "up" ? "↑" : "→";
+  const trendColor = trend === "down" ? "#dc2626" : trend === "up" ? "#16a34a" : "#64748b";
+
+  return (
+    <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 4, padding: "8px 12px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 6 }}>
+        eGFR Trend
+        <span style={{ fontSize: 14, color: trendColor, fontWeight: 800 }}>{trendIcon}</span>
+        <span style={{ color: trendColor, fontSize: 11 }}>
+          {trend === "down" ? "ลดลง" : trend === "up" ? "ดีขึ้น" : "คงที่"}
+        </span>
+      </div>
+      <svg width={W} height={H} style={{ overflow: "visible" }}>
+        {/* Grid line at eGFR=60 if in range */}
+        {minV < 60 && maxV > 60 && (() => {
+          const gy = PAD + (1 - (60 - minV) / range) * (H - PAD * 2);
+          return <line x1={PAD} y1={gy} x2={W - PAD} y2={gy} stroke="#e2e8f0" strokeWidth={1} strokeDasharray="3,2" />;
+        })()}
+        <polyline points={pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")} fill="none" stroke={trendColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={p.current ? 4 : 3} fill={p.current ? trendColor : "var(--surface)"} stroke={trendColor} strokeWidth={1.5} />
+            <text x={p.x} y={H - 1} textAnchor="middle" fontSize={8} fill="var(--ink-2)">{p.egfr}</text>
+          </g>
+        ))}
+      </svg>
+      <div style={{ fontSize: 10, color: "var(--ink-2)" }}>
+        {allPts.length} จุด · {allPts.map(p => p.date === "ปัจจุบัน" ? "ปัจจุบัน" : (p.date || "").slice(5)).join(" → ")}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Feature 4: DRP Summary Card ---------- */
+function DrpSummaryCard({ meds, otcItems, egfr }) {
+  const [open, setOpen] = React.useState(true);
+
+  const allIssues = React.useMemo(() => {
+    const issues = [];
+    const drugList = (meds || []).filter(m => m.drug && m.drug.trim());
+
+    // DDI
+    if (typeof window.checkDDI === "function" && drugList.length >= 2) {
+      const ddis = window.checkDDI(drugList.map(m => ({ name: m.drug })));
+      ddis.forEach(d => issues.push({
+        type: "ddi",
+        level: d.severity === "major" ? "major" : d.severity === "moderate" ? "moderate" : "minor",
+        text: `DDI: ${d.drugA} + ${d.drugB}`,
+        detail: d.message,
+      }));
+    }
+
+    // Dose adjustment + Contraindication per drug
+    if (egfr) {
+      drugList.forEach(m => {
+        if (typeof window.checkContraindicated === "function") {
+          const c = window.checkContraindicated(m.drug, egfr);
+          if (c) issues.push({
+            type: "contra",
+            level: c.level === "contraindicated" ? "major" : "moderate",
+            text: c.level === "contraindicated" ? `ห้ามใช้: ${m.drug}` : `ระวัง: ${m.drug}`,
+            detail: c.message,
+          });
+        }
+        if (typeof window.checkDoseAdjustment === "function") {
+          const d = window.checkDoseAdjustment(m.drug, egfr);
+          if (d) issues.push({
+            type: "dose",
+            level: d.level === "avoid" ? "major" : "moderate",
+            text: `ปรับขนาด: ${m.drug}`,
+            detail: d.message,
+          });
+        }
+      });
+    }
+
+    return issues;
+  }, [meds, otcItems, egfr]);
+
+  const counts = {
+    major: allIssues.filter(i => i.level === "major").length,
+    moderate: allIssues.filter(i => i.level === "moderate").length,
+    minor: allIssues.filter(i => i.level === "minor").length,
+  };
+  const total = allIssues.length;
+
+  if ((meds || []).filter(m => m.drug).length === 0) return null;
+
+  const iconOf = l => l === "major" ? "🔴" : l === "moderate" ? "🟡" : "🟢";
+  const colorOf = l => l === "major" ? "#b91c1c" : l === "moderate" ? "#92400e" : "#166534";
+  const bgOf = l => l === "major" ? "#fef2f2" : l === "moderate" ? "#fffbeb" : "#f0fdf4";
+
+  return (
+    <div style={{ marginTop: 14, border: `1.5px solid ${total ? "#fcd34d" : "#86efac"}`, borderRadius: 14, background: total ? "#fffbeb" : "#f0fdf4", overflow: "hidden" }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 18px", background: "none", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>{total ? "⚠️" : "✅"}</span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: total ? "#92400e" : "#166534" }}>สรุป DRP ที่ตรวจพบ</span>
+          {total > 0 ? (
+            <span style={{ display: "flex", gap: 6, marginTop: 3 }}>
+              {counts.major > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#dc2626", color: "#fff" }}>🔴 Major {counts.major}</span>}
+              {counts.moderate > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#d97706", color: "#fff" }}>🟡 Moderate {counts.moderate}</span>}
+              {counts.minor > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 99, background: "#16a34a", color: "#fff" }}>🟢 Minor {counts.minor}</span>}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: "#166534" }}>ไม่พบ DRP</span>
+          )}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: total ? "#d97706" : "#16a34a", color: "#fff", flexShrink: 0 }}>{total} รายการ</span>
+        <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", color: total ? "#92400e" : "#166534", flexShrink: 0 }}><Icon name="chevron" size={18} /></span>
+      </button>
+      {open && total > 0 && (
+        <div style={{ padding: "0 18px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+          {allIssues.map((issue, i) => (
+            <div key={i} style={{ padding: "9px 12px", borderRadius: 9, background: bgOf(issue.level), border: `1px solid ${colorOf(issue.level)}30` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: colorOf(issue.level) }}>{iconOf(issue.level)} {issue.text}</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginTop: 3, lineHeight: 1.4 }}>{issue.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && total === 0 && (
+        <div style={{ padding: "10px 18px 14px", fontSize: 13.5, color: "#166534", fontWeight: 600 }}>✅ ไม่พบ DRP จากรายการยาที่กรอก</div>
       )}
     </div>
   );

@@ -680,4 +680,218 @@ function diffMedLists(prevMeds = [], curMeds = []) {
   return { added, stopped, changed, unchanged };
 }
 
-Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose, generateCounselingNote, diffMedLists });
+/* =========================================================================
+   checkDDI(drugList) — ตรวจ DDI จาก list ชื่อยา
+   returns: [{drugA, drugB, severity:"major"|"moderate"|"minor", message}]
+   ========================================================================= */
+const DDI_SIMPLE = [
+  /* Warfarin combinations */
+  { a:["warfarin"], b:["aspirin","ibuprofen","naproxen","diclofenac","nsaid","celecoxib"], severity:"major", message:"Warfarin + NSAID/Aspirin — เพิ่มความเสี่ยงเลือดออกรุนแรง ควรหลีกเลี่ยง ถ้าจำเป็นใช้ Aspirin ขนาดต่ำ 81-100 mg และติดตาม INR" },
+  { a:["warfarin"], b:["amiodarone"], severity:"major", message:"Warfarin + Amiodarone — Amiodarone ยับยั้ง CYP2C9 ทำให้ INR สูงมาก เสี่ยงเลือดออก ควรลด Warfarin dose 30-50% และติดตาม INR ทุกสัปดาห์" },
+  { a:["warfarin"], b:["clarithromycin","erythromycin","azithromycin"], severity:"major", message:"Warfarin + Macrolide antibiotic — เพิ่ม INR ติดตาม INR ภายใน 3-5 วัน ขณะใช้ยาปฏิชีวนะ" },
+  { a:["warfarin"], b:["ciprofloxacin","levofloxacin","fluoroquinolone"], severity:"moderate", message:"Warfarin + Fluoroquinolone — เพิ่ม INR ปานกลาง ควรติดตาม INR ระหว่างใช้ยาและหลังหยุดยา 5-7 วัน" },
+  /* ACEI/ARB + K-sparing */
+  { a:["enalapril","lisinopril","ramipril","captopril","perindopril","imidapril","losartan","valsartan","candesartan","irbesartan","telmisartan","olmesartan","acei","arb"], b:["spironolactone","eplerenone","amiloride"], severity:"major", message:"ACEI/ARB + K-sparing diuretic — เพิ่มความเสี่ยง Hyperkalemia อย่างมากใน CKD ควรติดตาม K+ ทุก 1-2 สัปดาห์แรก และหลีกเลี่ยงถ้า K+ > 5.0 หรือ eGFR < 30" },
+  /* ACEI + ARB dual blockade */
+  { a:["enalapril","lisinopril","ramipril","captopril","perindopril","imidapril"], b:["losartan","valsartan","candesartan","irbesartan","telmisartan","olmesartan"], severity:"major", message:"ACEI + ARB Dual blockade — เพิ่มความเสี่ยง Hyperkalemia และ AKI อย่างมาก ไม่แนะนำให้ใช้ร่วมกัน (ONTARGET trial)" },
+  /* Metformin + contrast */
+  { a:["metformin"], b:["contrast","iodinated","iohexol","iodixanol","สารทึบรังสี"], severity:"major", message:"Metformin + Iodinated contrast — เสี่ยง Contrast-induced AKI ทำให้ Metformin สะสม → Lactic acidosis ควรหยุด Metformin ก่อนฉีดสาร 48 ชม. และตรวจ Scr ก่อนเริ่มยาใหม่" },
+  /* Digoxin + Amiodarone */
+  { a:["digoxin"], b:["amiodarone"], severity:"major", message:"Digoxin + Amiodarone — Amiodarone เพิ่มระดับ Digoxin 70-100% เสี่ยง Digoxin toxicity ควรลด Digoxin dose 50% เมื่อเริ่ม Amiodarone และติดตาม ECG กับ Digoxin level" },
+  /* Fluoroquinolone + Antacids */
+  { a:["ciprofloxacin","levofloxacin","fluoroquinolone"], b:["calcium carbonate","aluminum hydroxide","magnesium","antacid","sevelamer","lanthanum","แคลเซียม"], severity:"moderate", message:"Fluoroquinolone + Antacid/Mineral — Antacid ลดการดูดซึม Fluoroquinolone ได้ถึง 50-90% ควรรับประทาน Fluoroquinolone ก่อนอย่างน้อย 2 ชม. หรือ 6 ชม.หลัง" },
+  /* Statin + Amiodarone (myopathy) */
+  { a:["simvastatin","atorvastatin","rosuvastatin","statin"], b:["amiodarone"], severity:"major", message:"Statin + Amiodarone — Amiodarone เพิ่มระดับ Statin เสี่ยง Myopathy/Rhabdomyolysis โดยเฉพาะ Simvastatin max dose 20mg ถ้าใช้ร่วม Amiodarone ควรพิจารณาเปลี่ยนเป็น Rosuvastatin หรือ Pravastatin" },
+  /* NSAIDs + Diuretics */
+  { a:["ibuprofen","naproxen","diclofenac","celecoxib","nsaid"], b:["furosemide","torsemide","hydrochlorothiazide","indapamide"], severity:"major", message:"NSAID + Diuretic — NSAID ลดประสิทธิภาพยาขับปัสสาวะและเพิ่มเสี่ยง AKI (Triple Whammy ถ้ามี ACEI/ARB ด้วย) ควรหยุด NSAID และใช้ Paracetamol แทน" },
+  /* NSAIDs + ACEI (triple whammy) */
+  { a:["ibuprofen","naproxen","diclofenac","celecoxib","nsaid"], b:["enalapril","lisinopril","ramipril","losartan","valsartan","candesartan"], severity:"major", message:"NSAID + ACEI/ARB — Triple Whammy ใน CKD: เสี่ยง AKI สูงมาก ลด GFR, เพิ่ม K+, ลดประสิทธิภาพ Renoprotection ควรหยุด NSAID ทันทีและติดตาม Scr" },
+  /* Allopurinol + Azathioprine */
+  { a:["allopurinol"], b:["azathioprine","6-mercaptopurine"], severity:"major", message:"Allopurinol + Azathioprine — Allopurinol ยับยั้ง Xanthine oxidase ทำให้ Azathioprine สะสม เสี่ยง Bone marrow suppression รุนแรง ควรลด Azathioprine dose 25-33% หรือหลีกเลี่ยงการใช้ร่วมกัน" },
+  /* Cyclosporine + Statins */
+  { a:["cyclosporine","tacrolimus"], b:["simvastatin","atorvastatin","rosuvastatin","statin"], severity:"major", message:"Cyclosporine/Tacrolimus + Statin — เพิ่มระดับ Statin อย่างมาก เสี่ยง Myopathy/Rhabdomyolysis ควรหลีกเลี่ยง Simvastatin ใช้ Pravastatin ขนาดต่ำแทน (น้อย interaction)" },
+  /* Colchicine + Clarithromycin */
+  { a:["colchicine"], b:["clarithromycin","erythromycin"], severity:"major", message:"Colchicine + Clarithromycin — Clarithromycin เพิ่มระดับ Colchicine อย่างมาก เสี่ยงพิษรุนแรงถึงแก่ชีวิต ควรหลีกเลี่ยงการใช้ร่วมกัน เปลี่ยน antibiotic หรือลด Colchicine 0.5mg วันเว้นวัน" },
+  /* Digoxin + Loop diuretics (hypokalemia) */
+  { a:["digoxin"], b:["furosemide","torsemide","hydrochlorothiazide"], severity:"major", message:"Digoxin + Loop/Thiazide diuretic — ยาขับปัสสาวะทำให้ K+ ลด เพิ่มความเป็นพิษของ Digoxin ควรติดตาม K+ และ Digoxin level เป้าหมาย K+ > 4.0 mmol/L" },
+  /* Statin + Gemfibrozil */
+  { a:["simvastatin","atorvastatin","rosuvastatin","statin"], b:["gemfibrozil"], severity:"major", message:"Statin + Gemfibrozil — เสี่ยง Rhabdomyolysis รุนแรง ไม่ควรใช้ร่วมกัน ควรเปลี่ยนเป็น Fenofibrate (ปลอดภัยกว่า)" },
+  /* TMP-SMX + ACEI/ARB */
+  { a:["trimethoprim","tmp-smx","sulfamethoxazole","co-trimoxazole"], b:["enalapril","lisinopril","ramipril","losartan","valsartan"], severity:"major", message:"TMP-SMX + ACEI/ARB — TMP บล็อก Tubular K+ secretion ร่วมกับ ACEI/ARB เสี่ยง Hyperkalemia รุนแรงใน CKD ควรติดตาม K+ ภายใน 3-5 วัน" },
+];
+
+function checkDDI(drugList) {
+  if (!drugList || drugList.length < 2) return [];
+  const names = drugList.map(d => (d.name || d || "").toLowerCase().trim()).filter(Boolean);
+  const results = [];
+  const seen = new Set();
+  DDI_SIMPLE.forEach(rule => {
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const na = names[i], nb = names[j];
+        const aMatchA = rule.a.some(p => na.includes(p.toLowerCase()));
+        const bMatchB = rule.b.some(p => nb.includes(p.toLowerCase()));
+        const aMatchB = rule.b.some(p => na.includes(p.toLowerCase()));
+        const bMatchA = rule.a.some(p => nb.includes(p.toLowerCase()));
+        if ((aMatchA && bMatchB) || (aMatchB && bMatchA)) {
+          const key = rule.severity + "|" + [drugList[i].name||names[i], drugList[j].name||names[j]].sort().join("+");
+          if (!seen.has(key)) {
+            seen.add(key);
+            results.push({ drugA: drugList[i].name||names[i], drugB: drugList[j].name||names[j], severity: rule.severity, message: rule.message });
+          }
+        }
+      }
+    }
+  });
+  return results;
+}
+
+/* =========================================================================
+   checkDoseAdjustment(drugName, egfr) — ตรวจว่ายาต้องปรับขนาดตาม eGFR หรือไม่
+   returns: null | {level:"caution"|"reduce"|"avoid", message:string}
+   ========================================================================= */
+const DOSE_ADJ_DB = [
+  { drugs:["metformin"], checks:[
+    { egfrMax:30, level:"avoid", message:"Metformin: ห้ามใช้ eGFR < 30 เสี่ยง Lactic acidosis ควรหยุดยาและปรึกษาแพทย์เปลี่ยนยา" },
+    { egfrMax:45, level:"caution", message:"Metformin: ระวัง eGFR 30-45 ลด dose เป็นสูงสุด 1,000 mg/วัน และติดตาม Scr ทุก 3 เดือน" },
+  ]},
+  { drugs:["gabapentin"], checks:[
+    { egfrMax:30, level:"avoid", message:"Gabapentin: ลด dose มาก eGFR < 30: 300 mg ทุกวัน หรือ 300 mg วันเว้นวัน ถ้า eGFR < 15" },
+    { egfrMax:60, level:"reduce", message:"Gabapentin: ลด dose eGFR 30-59: สูงสุด 300 mg วันละ 2 ครั้ง เสี่ยง sedation เพิ่มใน uremia" },
+  ]},
+  { drugs:["pregabalin"], checks:[
+    { egfrMax:30, level:"avoid", message:"Pregabalin: ลดขนาด 75% ถ้า eGFR < 30 สูงสุด 75-150 mg/วัน เสี่ยง sedation สูง" },
+    { egfrMax:60, level:"reduce", message:"Pregabalin: ลดขนาด 50% ถ้า eGFR 30-59 เพิ่มความเสี่ยง sedation และ dizziness ใน CKD" },
+  ]},
+  { drugs:["allopurinol"], checks:[
+    { egfrMax:30, level:"avoid", message:"Allopurinol: ลด dose เหลือ 50-100 mg/วัน ถ้า eGFR < 30 เสี่ยง SJS รุนแรงขึ้น (HLA-B*5801 ในคนไทย)" },
+    { egfrMax:60, level:"reduce", message:"Allopurinol: ลด dose เหลือ 100-200 mg/วัน ถ้า eGFR 30-59 ติดตาม urate level และ skin reaction" },
+  ]},
+  { drugs:["spironolactone","eplerenone"], checks:[
+    { egfrMax:30, level:"avoid", message:"Spironolactone/Eplerenone: ห้ามใช้ eGFR < 30 เสี่ยง Hyperkalemia รุนแรง ควรเปลี่ยนเป็น Furosemide" },
+  ]},
+  { drugs:["colchicine"], checks:[
+    { egfrMax:30, level:"avoid", message:"Colchicine: ห้ามใช้ eGFR < 30 เสี่ยง Neuromyopathy สะสม ใช้ Prednisolone แทนใน acute gout" },
+    { egfrMax:50, level:"reduce", message:"Colchicine: ลด dose เหลือสูงสุด 0.5 mg วันละ 2 ครั้ง ถ้า eGFR 30-50" },
+  ]},
+  { drugs:["metoclopramide"], checks:[
+    { egfrMax:40, level:"reduce", message:"Metoclopramide: ลด dose 50% ถ้า eGFR < 40 เสี่ยง EPS (Extrapyramidal symptoms) สูงใน uremia" },
+  ]},
+  { drugs:["enoxaparin","lmwh"], checks:[
+    { egfrMax:30, level:"reduce", message:"Enoxaparin/LMWH: ปรับเป็น 1 mg/kg ทุก 24h ถ้า eGFR < 30 ติดตาม anti-Xa level พิจารณาเปลี่ยนเป็น UFH" },
+  ]},
+  { drugs:["digoxin"], checks:[
+    { egfrMax:30, level:"avoid", message:"Digoxin: ลด dose เหลือ 0.0625 mg/วัน ถ้า eGFR < 30 Digoxin สะสมมากใน CKD ติดตาม Digoxin level 0.5-0.9 ng/mL" },
+    { egfrMax:50, level:"reduce", message:"Digoxin: ลด dose เหลือ 0.125 mg/วัน ถ้า eGFR 30-50 ระวัง toxicity ใน hypokalemia" },
+  ]},
+  { drugs:["tramadol"], checks:[
+    { egfrMax:30, level:"avoid", message:"Tramadol: ห้ามใช้ eGFR < 30 metabolite M1 สะสม เสี่ยง Seizure และ CNS toxicity ใช้ Paracetamol แทน" },
+    { egfrMax:60, level:"reduce", message:"Tramadol: ยืดระยะห่างการให้ยา ถ้า eGFR 30-60 เป็น q8-12h แทน q4-6h" },
+  ]},
+  { drugs:["ranitidine","famotidine"], checks:[
+    { egfrMax:50, level:"reduce", message:"Ranitidine/Famotidine: ลด dose 50% ถ้า eGFR < 50 Ranitidine เพิ่ม Scr ปลอม (ลด tubular secretion)" },
+  ]},
+  { drugs:["bisoprolol","atenolol"], checks:[
+    { egfrMax:30, level:"reduce", message:"Bisoprolol/Atenolol: ลด dose ถ้า eGFR < 30 Atenolol ต้องปรับเป็น 25 mg/วัน หรือ q48h" },
+  ]},
+  { drugs:["acyclovir","valacyclovir"], checks:[
+    { egfrMax:30, level:"avoid", message:"Acyclovir/Valacyclovir: ลด dose ยา 50% ถ้า eGFR < 30 เสี่ยง Crystalline nephropathy และ Neurotoxicity" },
+    { egfrMax:50, level:"reduce", message:"Acyclovir/Valacyclovir: ลด dose หรือยืดระยะห่าง ถ้า eGFR 30-50 ให้ hydration ดี" },
+  ]},
+  { drugs:["nitrofurantoin"], checks:[
+    { egfrMax:30, level:"avoid", message:"Nitrofurantoin: ห้ามใช้ eGFR < 30 ยาไม่ออกฤทธิ์ใน urine และเป็น Peripheral neuropathy ได้" },
+  ]},
+  { drugs:["dabigatran"], checks:[
+    { egfrMax:30, level:"avoid", message:"Dabigatran: ห้ามใช้ eGFR < 30 80% ขับทางไต เสี่ยง Accumulation และเลือดออกรุนแรง ใช้ Apixaban แทน" },
+  ]},
+];
+
+function checkDoseAdjustment(drugName, egfr) {
+  if (!drugName || !egfr) return null;
+  const dn = drugName.toLowerCase().trim();
+  const eg = parseFloat(egfr);
+  if (isNaN(eg)) return null;
+  for (const entry of DOSE_ADJ_DB) {
+    if (entry.drugs.some(d => dn.includes(d.toLowerCase()))) {
+      for (const chk of entry.checks) {
+        if (eg < chk.egfrMax) return { level: chk.level, message: chk.message };
+      }
+    }
+  }
+  return null;
+}
+
+/* =========================================================================
+   checkContraindicated(drugName, egfr) — ตรวจยาที่ห้ามใช้หรือระวังใน CKD
+   returns: null | {level:"contraindicated"|"caution", message:string}
+   ========================================================================= */
+const CONTRA_DB = [
+  { drugs:["ibuprofen","naproxen","diclofenac","celecoxib","mefenamic","indomethacin","meloxicam","piroxicam","etoricoxib","nimesulide","nsaid"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"NSAID: ห้ามใช้ eGFR < 30 ทำให้ GFR ลดเฉียบพลัน AKI Hyperkalemia และ fluid retention ในผู้ป่วย CKD" },
+      { egfrMax:60, level:"caution", message:"NSAID: ระวัง eGFR 30-60 ลดการไหลเวียนเลือดไต เสี่ยง AKI ใช้ Paracetamol แทนถ้าเป็นไปได้" },
+    ]
+  },
+  { drugs:["metformin"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Metformin: ห้ามใช้ eGFR < 30 เสี่ยง Lactic acidosis รุนแรง ต้องหยุดยาทันที" },
+    ]
+  },
+  { drugs:["nitrofurantoin"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Nitrofurantoin: ห้ามใช้ eGFR < 30 ยาไม่ได้ผลเพราะไม่สะสมใน urine และเสี่ยง Peripheral neuropathy" },
+    ]
+  },
+  { drugs:["spironolactone","eplerenone","amiloride"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"K-sparing diuretic: ห้ามใช้ eGFR < 30 เสี่ยง Hyperkalemia รุนแรงจนหัวใจหยุดเต้นได้" },
+    ]
+  },
+  { drugs:["dabigatran"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Dabigatran: ห้ามใช้ eGFR < 30 ยาขับออกทางไต 80% สะสมมาก เสี่ยงเลือดออกรุนแรง ใช้ Apixaban แทน" },
+    ]
+  },
+  { drugs:["magnesium","แมกนีเซียม","magnesium hydroxide","milk of magnesia"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Magnesium antacid: ห้ามใช้ eGFR < 30 Mg สะสมได้ง่ายใน CKD เสี่ยง Hypermagnesemia จนหัวใจหยุดเต้น" },
+    ]
+  },
+  { drugs:["aluminum hydroxide","aluminum"],
+    checks:[
+      { egfrMax:60, level:"caution", message:"Aluminum antacid: ระวัง CKD ทุก stage Al สะสมทำให้ Encephalopathy, Osteomalacia ใช้เฉพาะระยะสั้นฉุกเฉิน" },
+    ]
+  },
+  { drugs:["colchicine"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Colchicine: ห้ามใช้ eGFR < 30 เสี่ยง Neuromyopathy สะสม ใช้ Prednisolone แทน" },
+    ]
+  },
+  { drugs:["glibenclamide","daonil"],
+    checks:[
+      { egfrMax:60, level:"contraindicated", message:"Glibenclamide: ห้ามใช้ใน CKD ทุก stage Active metabolite สะสม เสี่ยง Hypoglycemia รุนแรง เปลี่ยน Gliclazide หรือ Linagliptin" },
+    ]
+  },
+  { drugs:["tramadol"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Tramadol: ห้ามใช้ eGFR < 30 Metabolite M1 สะสม เสี่ยง Seizure และ CNS toxicity ใช้ Paracetamol แทน" },
+    ]
+  },
+];
+
+function checkContraindicated(drugName, egfr) {
+  if (!drugName || !egfr) return null;
+  const dn = drugName.toLowerCase().trim();
+  const eg = parseFloat(egfr);
+  if (isNaN(eg)) return null;
+  for (const entry of CONTRA_DB) {
+    if (entry.drugs.some(d => dn.includes(d.toLowerCase()))) {
+      for (const chk of entry.checks) {
+        if (eg < chk.egfrMax) return { level: chk.level, message: chk.message };
+      }
+    }
+  }
+  return null;
+}
+
+Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose, generateCounselingNote, diffMedLists, checkDDI, checkDoseAdjustment, checkContraindicated });
