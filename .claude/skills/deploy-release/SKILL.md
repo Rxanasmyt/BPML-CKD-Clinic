@@ -6,12 +6,13 @@ description: Deploy and release a new version of BPML-CKD-Clinic after code chan
 
 After completing any code change task for BPML-CKD-Clinic, follow these steps automatically.
 
-## 0. Rules — ห้ามละเมิด
+## 0. Rules — ห้ามละเมิดเด็ดขาด
 
-- **ห้ามลบ/แก้ข้อมูลใน Firestore** โดยไม่ได้รับคำสั่งชัดเจน
-- **ห้ามใส่ข้อมูลตัวอย่าง (seed/demo data)** ในโค้ดหรือ database
-- **ห้ามแตะ credentials/ชื่อ/รหัสผู้ใช้** — ให้ admin จัดการเองผ่านแอพ
-- **ห้ามแก้สิ่งที่ทำงานได้ดีอยู่แล้ว** เมื่อเพิ่ม feature ใหม่
+- **ห้ามใส่ข้อมูลตัวอย่าง (seed/demo data) ใดๆ ทั้งสิ้น** — ไม่ว่าในโค้ด, database, หรือ Firestore. ห้ามเด็ดขาด แม้จะ "เพื่อทดสอบ"
+- **ห้ามเพิ่มบัญชีผู้ใช้ทดลอง** — ผู้ใช้จริงมีเพียง admin (ภญ.ฟารีดา) และที่ admin เพิ่มเองเท่านั้น
+- **ห้ามแก้ชื่อ/username/pin ของ admin หรือผู้ใช้ใดๆ** — admin จัดการเองผ่านแอพเท่านั้น
+- **ห้ามลบ/แก้ข้อมูลใน Firestore** โดยไม่ได้รับคำสั่งชัดเจนจาก user
+- **ห้ามแก้สิ่งที่ทำงานได้ดีอยู่แล้ว** เมื่อเพิ่ม feature ใหม่ — ทำแค่ในส่วนที่สั่งเท่านั้น
 
 ## 1. Set git identity + bump SW cache
 
