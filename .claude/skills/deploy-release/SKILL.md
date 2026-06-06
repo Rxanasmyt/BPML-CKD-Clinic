@@ -33,11 +33,18 @@ https://claude.ai/code/session_01CbZFbENhnfGYQX5CT3TaTG"
 
 ## 3. Push to GitHub (triggers auto-deploy)
 
+Token is stored in `~/.claude/bpml_pat`. Read it first, then push:
+
 ```bash
-GIT_ASKPASS=/bin/true git -c credential.helper='' push https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git claude/lucid-mccarthy-VoB5Q
+PAT=$(cat ~/.claude/bpml_pat 2>/dev/null) && \
+GIT_ASKPASS=/bin/true git -c credential.helper='' push https://$PAT@github.com/Rxanasmyt/BPML-CKD-Clinic.git claude/lucid-mccarthy-VoB5Q
 ```
 
-PAT: ask user if not in session context  
+If `~/.claude/bpml_pat` is missing or push returns 403, ask the user for a new token, then save it:
+```bash
+echo -n "ghp_..." > ~/.claude/bpml_pat
+```
+
 GitHub Actions deploys to https://pharm-ckd-clinic.web.app within ~2 minutes.
 
 ## 4. Create GitHub Release
@@ -48,11 +55,12 @@ Increment version:
 - **Major** (v1.x → v2.0.0): full redesign (rare)
 
 ```bash
+PAT=$(cat ~/.claude/bpml_pat)
 git tag vX.Y.Z
-GIT_ASKPASS=/bin/true git -c credential.helper='' push https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git vX.Y.Z
+GIT_ASKPASS=/bin/true git -c credential.helper='' push https://$PAT@github.com/Rxanasmyt/BPML-CKD-Clinic.git vX.Y.Z
 
 curl -s -X POST \
-  -H "Authorization: token <PAT>" \
+  -H "Authorization: token $PAT" \
   -H "Accept: application/vnd.github+json" \
   https://api.github.com/repos/Rxanasmyt/BPML-CKD-Clinic/releases \
   -d "{
@@ -72,7 +80,7 @@ Release body เขียนภาษาไทย สรุปสิ่งที
 **Stack:** React 18 UMD + Babel standalone, Firebase Firestore, Firebase Hosting PWA  
 **Branch:** `claude/lucid-mccarthy-VoB5Q`  
 **Live:** https://pharm-ckd-clinic.web.app  
-**SW cache:** v23  
+**SW cache:** v24  
 
 **Features ที่มีแล้ว (ห้ามแตะถ้าไม่ได้รับคำสั่ง):**
 - Firebase Firestore เป็น single source of truth (ไม่มี localStorage fallback สำหรับ records)
