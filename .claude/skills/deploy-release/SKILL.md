@@ -6,41 +6,50 @@ description: Deploy and release a new version of BPML-CKD-Clinic after code chan
 
 After completing any code change task for BPML-CKD-Clinic, follow these steps automatically.
 
-## 1. Commit changes
+## 0. Rules — ห้ามละเมิด
+
+- **ห้ามลบ/แก้ข้อมูลใน Firestore** โดยไม่ได้รับคำสั่งชัดเจน
+- **ห้ามใส่ข้อมูลตัวอย่าง (seed/demo data)** ในโค้ดหรือ database
+- **ห้ามแตะ credentials/ชื่อ/รหัสผู้ใช้** — ให้ admin จัดการเองผ่านแอพ
+- **ห้ามแก้สิ่งที่ทำงานได้ดีอยู่แล้ว** เมื่อเพิ่ม feature ใหม่
+
+## 1. Set git identity + bump SW cache
+
+```bash
+git config user.email noreply@anthropic.com
+git config user.name Claude
+```
+
+ใน `sw.js` increment `CACHE_NAME` (e.g. `pharm-ckd-v23` → `pharm-ckd-v24`) ทุกครั้งก่อน commit
+
+## 2. Commit
 
 ```bash
 git add <changed files>
-git commit -m "<descriptive message in English>"
+git commit -m "<descriptive message in English>
+
+https://claude.ai/code/session_01CbZFbENhnfGYQX5CT3TaTG"
 ```
-
-## 2. Bump service worker cache version
-
-In `sw.js`, increment `CACHE_NAME` (e.g. `pharm-ckd-v9` → `pharm-ckd-v10`) so users get the latest files after deploy. Include this in the commit.
 
 ## 3. Push to GitHub (triggers auto-deploy)
 
-Use the GitHub PAT stored in the session (ask the user if not available in context):
-
 ```bash
-git remote set-url origin https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git
-git push -u origin claude/lucid-mccarthy-VoB5Q
-git remote set-url origin https://github.com/Rxanasmyt/BPML-CKD-Clinic.git
+GIT_ASKPASS=/bin/true git -c credential.helper='' push https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git claude/lucid-mccarthy-VoB5Q
 ```
 
-GitHub Actions will automatically deploy to https://pharm-ckd-clinic.web.app within ~2 minutes.
+PAT: ask user if not in session context  
+GitHub Actions deploys to https://pharm-ckd-clinic.web.app within ~2 minutes.
 
 ## 4. Create GitHub Release
 
-Determine the next version by incrementing from the latest release tag:
+Increment version:
 - **Patch** (v1.3.0 → v1.3.1): bug fixes, minor tweaks
-- **Minor** (v1.3.x → v1.4.0): new feature, new DRP rule, new UI section
+- **Minor** (v1.3.x → v1.4.0): new feature, new UI section
 - **Major** (v1.x → v2.0.0): full redesign (rare)
 
 ```bash
 git tag vX.Y.Z
-git remote set-url origin https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git
-git push origin vX.Y.Z
-git remote set-url origin https://github.com/Rxanasmyt/BPML-CKD-Clinic.git
+GIT_ASKPASS=/bin/true git -c credential.helper='' push https://<PAT>@github.com/Rxanasmyt/BPML-CKD-Clinic.git vX.Y.Z
 
 curl -s -X POST \
   -H "Authorization: token <PAT>" \
@@ -56,4 +65,25 @@ curl -s -X POST \
   }"
 ```
 
-Write the release body in Thai with `##` sections summarizing what changed.
+Release body เขียนภาษาไทย สรุปสิ่งที่เปลี่ยนแปลง
+
+## 5. Current app state (อัปเดต 2026-06-06)
+
+**Stack:** React 18 UMD + Babel standalone, Firebase Firestore, Firebase Hosting PWA  
+**Branch:** `claude/lucid-mccarthy-VoB5Q`  
+**Live:** https://pharm-ckd-clinic.web.app  
+**SW cache:** v23  
+
+**Features ที่มีแล้ว (ห้ามแตะถ้าไม่ได้รับคำสั่ง):**
+- Firebase Firestore เป็น single source of truth (ไม่มี localStorage fallback สำหรับ records)
+- Admin-only: จัดการบัญชี, ประวัติลบ
+- Delete Visit พร้อม confirmation modal + audit log (`pharm_ckd_delete_log`)
+- Mobile: bottom nav 4 tabs + "เพิ่มเติม" bottom sheet
+- Dashboard: onboarding empty state, KPI cards, charts
+- Form: autosave draft, duplicate visit warning, HN auto-fill, copy meds from prev visit
+- Global search ใน TopBar (desktop)
+- Dark mode toggle ใน TopBar
+- Skeleton loading ระหว่าง Firebase connect
+- Page slide transitions
+- Card hover lift animation
+- Error boundary with reload button
