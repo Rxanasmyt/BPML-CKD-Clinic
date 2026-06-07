@@ -19,6 +19,14 @@ const DRUG_DB = [
     note:"Max 2 mg/day ถ้า eGFR<30; ออกฤทธิ์นาน สะดวก 1 ครั้ง/วัน" },
   { name:"Imidapril", cls:"ACEI", strengths:["5 mg","10 mg"], flags:["renal","k"],
     note:"ปรับ dose ใน CKD 3-5; ติดตาม K⁺" },
+  { name:"Fosinopril", cls:"ACEI", strengths:["10 mg","20 mg"], flags:["k"],
+    note:"dual excretion (renal+hepatic) → ปรับ dose น้อยกว่า ACEI ตัวอื่นใน severe CKD; ติดตาม K⁺" },
+  { name:"Benazepril", cls:"ACEI", strengths:["5 mg","10 mg","20 mg"], flags:["renal","k"],
+    note:"ลด dose ใน eGFR<30; renoprotective ใน diabetic+non-diabetic CKD" },
+  { name:"Quinapril", cls:"ACEI", strengths:["5 mg","10 mg","20 mg"], flags:["renal","k"],
+    note:"ลด dose ใน eGFR<30; Max 40 mg/day; ติดตาม K⁺" },
+  { name:"Trandolapril", cls:"ACEI", strengths:["0.5 mg","1 mg","2 mg","4 mg"], flags:["renal","k"],
+    note:"ลด dose ใน severe CKD; มีหลักฐาน cardioprotection post-MI" },
 
   /* ===== ARB ===== */
   { name:"Losartan", cls:"ARB", strengths:["25 mg","50 mg","100 mg"], flags:["k"],
@@ -33,6 +41,10 @@ const DRUG_DB = [
     note:"ไม่ต้องปรับ dose; ออกฤทธิ์นาน 24h; ใช้ได้ใน CKD" },
   { name:"Olmesartan", cls:"ARB", strengths:["10 mg","20 mg","40 mg"], flags:["k"],
     note:"ไม่ต้องปรับ dose; ห้ามร่วมกับ ACEI หรือ aliskiren" },
+  { name:"Azilsartan", cls:"ARB", strengths:["20 mg","40 mg","80 mg"], flags:["k"],
+    note:"ไม่ต้องปรับ dose; BP reduction สูงสุดในกลุ่ม ARB; ใช้ได้ใน CKD" },
+  { name:"Fimasartan", cls:"ARB", strengths:["60 mg","120 mg"], flags:["k"],
+    note:"ไม่ต้องปรับ dose; ใช้บ่อยในเกาหลี/เอเชีย; ติดตาม K⁺" },
 
   /* ===== SGLT2 inhibitors (สำคัญมากใน CKD) ===== */
   { name:"Dapagliflozin", cls:"SGLT2 inhibitor", strengths:["5 mg","10 mg"], flags:["renal"],
@@ -53,6 +65,16 @@ const DRUG_DB = [
     note:"ลด proteinuria ร่วมกับ ACEI/ARB; ไม่ต้องปรับ dose; ระวัง HR" },
   { name:"Verapamil", cls:"CCB (Non-DHP)", strengths:["40 mg","80 mg","120 mg SR"], flags:["renal"],
     note:"ลด dose ใน severe CKD; ท้องผูกเป็น side effect สำคัญ" },
+  { name:"Manidipine", cls:"CCB (DHP)", strengths:["10 mg","20 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; renoprotective — ลด glomerular hypertension; ใช้บ่อยในคลินิกไตไทย; t½ 8h" },
+  { name:"Lercanidipine", cls:"CCB (DHP)", strengths:["10 mg","20 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; renoprotective — ลด proteinuria; กินก่อนอาหาร 15 นาที; lipophilic → นาน" },
+  { name:"Cilnidipine", cls:"CCB (DHP/N-type)", strengths:["5 mg","10 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; ลด sympathetic tone + ลด proteinuria; เหมาะ CKD+DM" },
+  { name:"Barnidipine", cls:"CCB (DHP)", strengths:["10 mg","15 mg","20 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; กินวันละครั้ง; long-acting" },
+  { name:"Nicardipine", cls:"CCB (DHP)", strengths:["20 mg","30 mg SR"], flags:[],
+    note:"ไม่ต้องปรับ dose; มีรูปแบบ IV สำหรับ hypertensive urgency" },
 
   /* ===== Beta-blockers ===== */
   { name:"Metoprolol succinate", cls:"Beta-blocker (β1)", strengths:["25 mg SR","50 mg SR","100 mg SR","200 mg SR"], flags:[],
@@ -109,6 +131,8 @@ const DRUG_DB = [
     note:"Short-acting; metabolites inactive → ปลอดภัยกว่า glibenclamide; ระวัง eGFR<50" },
   { name:"Glibenclamide", cls:"Sulfonylurea (SU)", strengths:["5 mg"], flags:["contra"],
     note:"⚠️ AVOID ใน CKD ทุก stage — active metabolite สะสม → hypoglycemia รุนแรง" },
+  { name:"Glimepiride", cls:"Sulfonylurea (SU)", strengths:["1 mg","2 mg","3 mg","4 mg"], flags:["renal"],
+    note:"⚠️ ระวัง CKD eGFR<60; เริ่ม 1 mg/day; metabolite มี activity → hypoglycemia; หลีกเลี่ยง eGFR<30" },
   { name:"Sitagliptin", cls:"DPP-4 inhibitor", strengths:["25 mg","50 mg","100 mg"], flags:["renal"],
     note:"ปรับ dose: eGFR 30-44 → 50 mg/day; <30 → 25 mg/day; ปลอดภัยใน CKD" },
   { name:"Vildagliptin", cls:"DPP-4 inhibitor", strengths:["50 mg"], flags:["renal"],
@@ -117,6 +141,14 @@ const DRUG_DB = [
     note:"eGFR<45 → ลด 2.5 mg/day; ระวัง HF exacerbation" },
   { name:"Linagliptin", cls:"DPP-4 inhibitor", strengths:["5 mg"], flags:[],
     note:"✓ ไม่ต้องปรับ dose — Preferred DPP-4i ใน CKD ทุก stage (biliary excretion)" },
+  { name:"Alogliptin", cls:"DPP-4 inhibitor", strengths:["6.25 mg","12.5 mg","25 mg"], flags:["renal"],
+    note:"ปรับ dose: eGFR 30-59 → 12.5 mg/day; <30 → 6.25 mg/day; ปลอดภัยใน CKD" },
+  { name:"Teneligliptin", cls:"DPP-4 inhibitor", strengths:["20 mg","40 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ใน CKD; dual excretion; ใช้บ่อยในคลินิกไตไทย" },
+  { name:"Trelagliptin", cls:"DPP-4 inhibitor (weekly)", strengths:["100 mg"], flags:["renal"],
+    note:"กิน 1 ครั้ง/สัปดาห์; ปรับ dose ใน eGFR<45; เพิ่ม adherence" },
+  { name:"Omarigliptin", cls:"DPP-4 inhibitor (weekly)", strengths:["12.5 mg","25 mg"], flags:["renal"],
+    note:"กิน 1 ครั้ง/สัปดาห์; ลด 12.5 mg/week ใน eGFR<45" },
   { name:"Pioglitazone", cls:"Thiazolidinedione (TZD)", strengths:["15 mg","30 mg","45 mg"], flags:[],
     note:"ไม่ต้องปรับ dose; ห้ามใน HF (fluid retention) และ osteoporosis; ลด IR" },
   { name:"Liraglutide", cls:"GLP-1 receptor agonist", strengths:["6 mg/mL (FlexPen)"], flags:["renal"],
@@ -412,6 +444,60 @@ const DRUG_DB = [
   { name:"Probenecid", cls:"Uricosuric", strengths:["500 mg"], flags:["renal","contra"],
     note:"⚠️ Ineffective ถ้า eGFR<30; เพิ่มเสี่ยง urate nephropathy; หลีกเลี่ยงใน CKD ระยะสูง" },
 
+  /* ===== MRA (non-steroidal, new) ===== */
+  { name:"Finerenone", cls:"Non-steroidal MRA", strengths:["10 mg","20 mg"], flags:["k"],
+    note:"FIDELIO-DKD/FIGARO-DKD: ลด progression CKD+DM+proteinuria; 10 mg ถ้า eGFR 25-59; 20 mg ถ้า eGFR≥60; ติดตาม K⁺" },
+
+  /* ===== BPH (พบบ่อยใน CKD male) ===== */
+  { name:"Tamsulosin", cls:"Alpha-1 blocker (uroselective)", strengths:["0.2 mg","0.4 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD; ระวัง orthostatic hypotension + ผลยา antihypertensive" },
+  { name:"Silodosin", cls:"Alpha-1 blocker (uroselective)", strengths:["4 mg","8 mg"], flags:["renal"],
+    note:"eGFR<30: ห้ามใช้; eGFR 30-50: 4 mg/day; retrograde ejaculation บ่อย" },
+  { name:"Finasteride", cls:"5-alpha reductase inhibitor", strengths:["5 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ใน CKD; ลด PSA 50%; ระวังใช้ร่วม DOAC (เลือดออก)" },
+
+  /* ===== ADPKD ===== */
+  { name:"Tolvaptan", cls:"V2 receptor antagonist", strengths:["15 mg","30 mg","45 mg","60 mg","90 mg"], flags:["renal"],
+    note:"ADPKD: ลด cyst growth eGFR>25; ⚠️ hepatotoxic (ติดตาม LFT); polyuria/polydipsia; avoid aquaretic overload" },
+
+  /* ===== GI (Laxatives — สำคัญใน CKD จาก phosphate binders) ===== */
+  { name:"Lactulose", cls:"Osmotic laxative", strengths:["10 g/15 mL"], flags:[],
+    note:"ไม่ต้องปรับ dose; ใช้บ่อยใน CKD ที่มีท้องผูกจาก binders; ปรับ dose ตามอุจจาระ" },
+  { name:"Bisacodyl", cls:"Stimulant laxative", strengths:["5 mg","10 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; ใช้ระยะสั้น; ระวัง electrolyte imbalance ถ้าใช้นาน" },
+  { name:"Macrogol (PEG 3350)", cls:"Osmotic laxative", strengths:["13.8 g sachet"], flags:[],
+    note:"ไม่ต้องปรับ dose; ปลอดภัยใน CKD; minimal absorption; เหมาะท้องผูกเรื้อรัง" },
+
+  /* ===== MINERALS / SUPPLEMENTS (CKD-specific) ===== */
+  { name:"Magnesium oxide", cls:"Mg supplement", strengths:["250 mg","500 mg"], flags:[],
+    note:"Mg²⁺ สะสมใน CKD 3b+; ติดตาม Mg level; ใช้ใน hypomagnesemia จาก PPI/diuretic" },
+  { name:"Potassium citrate", cls:"Urinary alkalinizer", strengths:["5 mEq","10 mEq"], flags:["k"],
+    note:"ลด uric acid stones; metabolic acidosis (เพิ่ม HCO3); ระวัง hyperkalemia ใน CKD" },
+  { name:"Sodium citrate", cls:"Urinary alkalinizer", strengths:["500 mg"], flags:[],
+    note:"ลด metabolic acidosis; ระวัง Na load ใน edema/HTN" },
+  { name:"Calcium gluconate 10%", cls:"IV Calcium (emergency)", strengths:["10 mL IV"], flags:[],
+    note:"IV ใน hyperkalemia + cardiac changes; ป้องกัน membrane ไม่ได้ลด K⁺; onset 1-3 นาที" },
+
+  /* ===== CORTICOSTEROIDS ===== */
+  { name:"Methylprednisolone", cls:"Corticosteroid", strengths:["4 mg","16 mg","500 mg IV","1000 mg IV"], flags:[],
+    note:"IV pulse ใน nephrotic syndrome/GN; ไม่ต้องปรับ dose; ระวัง glucose, BP, infection" },
+  { name:"Dexamethasone", cls:"Corticosteroid", strengths:["0.5 mg","4 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ใน CKD; ต้านการอักเสบ; ไม่มี mineralocorticoid activity" },
+
+  /* ===== ANTIBIOTICS (เพิ่มเติม 2) ===== */
+  { name:"Fosfomycin", cls:"Antibiotic (phosphonic acid)", strengths:["3 g sachet (oral)","4 g IV"], flags:["renal"],
+    note:"✓ Preferred ใน UTI ใน CKD; single dose 3g PO; ปรับ IV dose ตาม eGFR; active ต่อ ESBL" },
+  { name:"Piperacillin-Tazobactam", cls:"Antipseudomonal penicillin", strengths:["2.25 g IV","4.5 g IV"], flags:["renal"],
+    note:"ปรับ dose+interval ตาม eGFR; ระวัง encephalopathy ใน overdose+CKD; broad spectrum" },
+  { name:"Imipenem-Cilastatin", cls:"Carbapenem", strengths:["500 mg IV","1 g IV"], flags:["renal"],
+    note:"ปรับ dose ตาม eGFR; cilastatin ป้องกัน renal tubular hydrolysis; ระวัง seizure ใน CNS disease" },
+  { name:"Colistin", cls:"Polymyxin (last resort)", strengths:["150 mg CBA IV"], flags:["renal","nephrotoxic"],
+    note:"⚠️ Nephrotoxic; ปรับ dose ตาม eGFR+น้ำหนัก; ติดตาม Scr ทุกวัน; ใช้เฉพาะ MDR organisms" },
+  { name:"Amikacin", cls:"Aminoglycoside", strengths:["250 mg/mL IV"], flags:["renal","nephrotoxic"],
+    note:"⚠️ Nephrotoxic+ototoxic; extended-interval dosing ใน CKD; ติดตาม peak/trough+Scr" },
+  { name:"Nitrofurantoin", cls:"Urinary antiseptic", strengths:["50 mg","100 mg"], flags:["renal","contra"],
+    note:"⚠️ หลีกเลี่ยง eGFR<30 (ไม่ถึง urine, toxicity); ใช้ได้ eGFR≥45; macrocrystal ทน GI ดีกว่า" },
+
   /* ===== ANTIPLATELET / DOAC (เพิ่มเติม) ===== */
   { name:"Clopidogrel", cls:"Antiplatelet (P2Y12)", strengths:["75 mg"], flags:[],
     note:"✓ ไม่ต้องปรับ dose ใน CKD; prodrug (CYP2C19); ระวัง interaction กับ omeprazole" },
@@ -485,6 +571,23 @@ const DRUG_ALIASES = {
   "Sodium bicarbonate": ["nahco3","โซเดียมไบคาร์บอเนต","ไบคาร์บ"],
   "Ferrous fumarate": ["ferrous","ธาตุเหล็ก","เฟอรัส"],
   "Folic acid": ["folate","โฟลิก","กรดโฟลิก"],
+  "Manidipine": ["calslot","madiplot","มานิดิพีน","แคลสล็อต"],
+  "Lercanidipine": ["zanidip","เลอร์คานิดิพีน","ซานิดิพ"],
+  "Cilnidipine": ["atelec","cinalong","ซิลนิดิพีน","อาเทลเลค"],
+  "Glimepiride": ["amaryl","glimpid","ไกลเมพิไรด์","อะมาริล"],
+  "Alogliptin": ["nesina","alogliptin","อะโลกลิปติน"],
+  "Teneligliptin": ["tenelia","เทเนลิกลิปติน"],
+  "Finerenone": ["kerendia","ไฟเนเรโนน","เคเรนเดีย"],
+  "Tamsulosin": ["flomax","harnal","แทมซูโลซิน","ฮาร์นาล"],
+  "Tolvaptan": ["jinarc","samsca","โทลวาพแทน","จินาร์ค"],
+  "Fosfomycin": ["monurol","โฟสโฟมัยซิน","มอนูรอล"],
+  "Lactulose": ["duphalac","แลคทูโลส","ดูฟาแลค"],
+  "Macrogol (PEG 3350)": ["movicol","forlax","แมคโครกอล","มูวิโคล"],
+  "Magnesium oxide": ["magnox","แมกนีเซียม","แมกนอกซ์"],
+  "Potassium citrate": ["urocit-k","โพแทสเซียมซิเตรต"],
+  "Methylprednisolone": ["solu-medrol","depo-medrol","เมทิลเพรดนิโซโลน"],
+  "Fosinopril": ["monopril","โฟซิโนพริล"],
+  "Benazepril": ["lotensin","เบนาเซพริล"],
 };
 
 // reverse index: alias(lowercase) → INN name
@@ -546,6 +649,10 @@ const DRUG_DOSING = {
   "Captopril":        { unit:"mg", maxDaily:150,  renalMax:[{egfr:30,max:150},{egfr:0,max:75}] },
   "Perindopril":      { unit:"mg", maxDaily:8,    renalMax:[{egfr:30,max:8},{egfr:0,max:4}] },
   "Imidapril":        { unit:"mg", maxDaily:20,   renalMax:[{egfr:30,max:10},{egfr:0,max:5}] },
+  "Fosinopril":       { unit:"mg", maxDaily:40 },
+  "Benazepril":       { unit:"mg", maxDaily:40,   renalMax:[{egfr:30,max:20},{egfr:0,max:10}] },
+  "Quinapril":        { unit:"mg", maxDaily:40,   renalMax:[{egfr:30,max:20},{egfr:0,max:10}] },
+  "Trandolapril":     { unit:"mg", maxDaily:4,    renalMax:[{egfr:30,max:2},{egfr:0,max:0.5}] },
   /* ===== ARB ===== */
   "Losartan":         { unit:"mg", maxDaily:100 },
   "Valsartan":        { unit:"mg", maxDaily:320 },
@@ -553,6 +660,8 @@ const DRUG_DOSING = {
   "Irbesartan":       { unit:"mg", maxDaily:300 },
   "Telmisartan":      { unit:"mg", maxDaily:80 },
   "Olmesartan":       { unit:"mg", maxDaily:40 },
+  "Azilsartan":       { unit:"mg", maxDaily:80 },
+  "Fimasartan":       { unit:"mg", maxDaily:120 },
   /* ===== SGLT2i ===== */
   "Dapagliflozin":    { unit:"mg", maxDaily:10 },
   "Empagliflozin":    { unit:"mg", maxDaily:25 },
@@ -563,6 +672,11 @@ const DRUG_DOSING = {
   "Nifedipine CR":    { unit:"mg", maxDaily:90 },
   "Diltiazem":        { unit:"mg", maxDaily:360 },
   "Verapamil":        { unit:"mg", maxDaily:480 },
+  "Manidipine":       { unit:"mg", maxDaily:20 },
+  "Lercanidipine":    { unit:"mg", maxDaily:20 },
+  "Cilnidipine":      { unit:"mg", maxDaily:20 },
+  "Barnidipine":      { unit:"mg", maxDaily:20 },
+  "Nicardipine":      { unit:"mg", maxDaily:120 },
   /* ===== Beta-blockers ===== */
   "Metoprolol succinate": { unit:"mg", maxDaily:200 },
   "Metoprolol tartrate":  { unit:"mg", maxDaily:400 },
@@ -595,6 +709,11 @@ const DRUG_DOSING = {
   "Vildagliptin":     { unit:"mg", maxDaily:100,  renalMax:[{egfr:50,max:100},{egfr:0,max:50}] },
   "Saxagliptin":      { unit:"mg", maxDaily:5,    renalMax:[{egfr:45,max:5},{egfr:0,max:2.5}] },
   "Linagliptin":      { unit:"mg", maxDaily:5 },
+  "Glimepiride":      { unit:"mg", maxDaily:8,    renalMax:[{egfr:60,max:4},{egfr:30,max:2},{egfr:0,max:0}] },
+  "Alogliptin":       { unit:"mg", maxDaily:25,   renalMax:[{egfr:60,max:25},{egfr:45,max:12.5},{egfr:30,max:6.25},{egfr:0,max:6.25}] },
+  "Teneligliptin":    { unit:"mg", maxDaily:40 },
+  "Trelagliptin":     { unit:"mg", maxDaily:100,  renalMax:[{egfr:45,max:50},{egfr:0,max:25}] },
+  "Omarigliptin":     { unit:"mg", maxDaily:25,   renalMax:[{egfr:45,max:12.5},{egfr:0,max:6.25}] },
   "Pioglitazone":     { unit:"mg", maxDaily:45 },
   /* ===== Lipid ===== */
   "Atorvastatin":     { unit:"mg", maxDaily:80 },
