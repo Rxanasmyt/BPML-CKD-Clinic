@@ -1232,8 +1232,42 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 12 }}>{f.time || "บันทึกเวลาอัตโนมัติ"}</span>
         </div>
 
-        {/* Feature 4: DRP Summary Card */}
-        <DrpSummaryCard meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} />
+        {/* DRP pre-save summary — driven by the same drpFindings already computed above */}
+        {(()=>{
+          const high = drpFindings.filter(x=>x.sev==="HIGH").length;
+          const med  = drpFindings.filter(x=>x.sev==="MED").length;
+          const low  = drpFindings.filter(x=>x.sev==="LOW").length;
+          const total = drpFindings.length;
+          const bg = total ? (high ? "#fef3c7" : "#fff7ed") : "#f0fdf4";
+          const border = total ? (high ? "#fcd34d" : "#fdba74") : "#bbf7d0";
+          const icon = total ? (high ? "⚠️" : "ℹ️") : "✅";
+          const headline = total ? `พบ ${total} รายการ` : "ไม่พบ DRP";
+          return (
+            <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: "14px 18px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: total?8:0 }}>
+                <span style={{fontSize:18}}>{icon}</span>
+                <span style={{fontWeight:800, fontSize:14.5, color: total?(high?"#92400e":"#c2410c"):"#166534"}}>สรุป DRP ที่ตรวจพบ</span>
+                <span style={{marginLeft:"auto", fontWeight:700, fontSize:13, color:"#374151"}}>{headline}</span>
+                {high>0 && <span style={{background:"#dc2626",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:11.5,fontWeight:700}}>HIGH ×{high}</span>}
+                {med>0  && <span style={{background:"#f59e0b",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:11.5,fontWeight:700}}>MED ×{med}</span>}
+                {low>0  && <span style={{background:"#3b82f6",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:11.5,fontWeight:700}}>LOW ×{low}</span>}
+              </div>
+              {total>0 && (
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {drpFindings.map((fd,i)=>{
+                    const sevColor = fd.sev==="HIGH"?"#dc2626":fd.sev==="MED"?"#d97706":"#2563eb";
+                    const label = typeof window.drpLabel==="function" ? window.drpLabel(fd.drpKey) : fd.drpKey;
+                    return (
+                      <span key={i} style={{background:"#fff",border:`1.5px solid ${sevColor}`,color:sevColor,borderRadius:8,padding:"3px 10px",fontSize:12,fontWeight:600}}>
+                        {label} {fd.drug ? `(${fd.drug})` : ""}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* sticky bottom bar */}
