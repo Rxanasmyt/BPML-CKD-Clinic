@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pharm-ckd-v27';
+const CACHE_NAME = 'pharm-ckd-v28';
 const ASSETS = [
   '/',
   '/index.html',
@@ -19,6 +19,7 @@ const ASSETS = [
   '/app/login.jsx',
   '/app/dashboard.jsx',
   '/app/patients.jsx',
+  '/app/lab_trend.jsx',
   '/app/form.jsx',
   '/app/calendar.jsx',
   '/app/reports.jsx',

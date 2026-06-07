@@ -6,10 +6,22 @@
 
 /* ---------- Severity levels ---------- */
 const SEV = { HIGH: "HIGH", MED: "MEDIUM", LOW: "LOW" };
+// DRPK — maps internal engine keys → NEW PCNE v9.1 taxonomy keys (data.jsx DRP_OPTIONS)
 const DRPK = {
-  duplicate: "duplicate", omission: "omission", renal: "renal_dose",
-  contra: "contra", nephrotoxic: "nephrotoxic", electrolyte: "electrolyte",
-  ddi: "ddi", adherence: "adherence", overdose: "overdose",
+  duplicate: "duplicate",
+  omission: "untreated_indication",      // ยาที่ควรได้รับแต่ยังไม่ได้รับ
+  renal: "renal_dose",
+  contra: "contraindication",
+  nephrotoxic: "nephrotoxic",
+  electrolyte: "electrolyte",
+  ddi: "ddi",
+  adherence: "adherence",
+  overdose: "supratherapeutic_dose",
+  subdose: "subtherapeutic_dose",
+  monitoring: "monitoring",
+  timing: "timing",
+  allergy: "allergy",
+  no_indication: "no_indication",
 };
 
 /* ---------- Dose parsing helpers ---------- */
@@ -282,6 +294,74 @@ const DDI_RULES = [
   },
 
   /* ===== HERB-DRUG ===== */
+  /* ===== ABSORPTION: LEVOTHYROXINE / IRON ===== */
+  {
+    id:"binder-levothyroxine", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"calcium carbonate")||dm(a,"calcium acetate")||dm(a,"sevelamer")||dm(a,"lanthanum")||dm(a,"sucroferric")||dm(a,"phosphate binder")||dm(a,"แคลเซียม")) && dm(b,"levothyroxine"),
+    msg:"Phosphate binder/Calcium + Levothyroxine — ลดการดูดซึม levothyroxine มาก → hypothyroidism",
+    rec:"กิน Levothyroxine ห่างจาก binder/Ca อย่างน้อย 4 ชั่วโมง; ติดตาม TSH", drpKey:DRPK.timing,
+  },
+  {
+    id:"iron-levothyroxine", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"ferrous")||dm(a,"iron")||dm(a,"ธาตุเหล็ก")) && dm(b,"levothyroxine"),
+    msg:"Iron + Levothyroxine — เกิด chelation ลดการดูดซึม levothyroxine",
+    rec:"กิน Levothyroxine ห่างจาก iron อย่างน้อย 4 ชั่วโมง; ติดตาม TSH", drpKey:DRPK.timing,
+  },
+  {
+    id:"iron-quinolone-tetra", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"ferrous")||dm(a,"iron")||dm(a,"ธาตุเหล็ก")) && (dm(b,"ciprofloxacin")||dm(b,"levofloxacin")||dm(b,"moxifloxacin")||dm(b,"fluoroquinolone")||dm(b,"doxycycline")||dm(b,"tetracycline")),
+    msg:"Iron + Quinolone/Tetracycline — chelation ลดการดูดซึมยาปฏิชีวนะมาก",
+    rec:"กินยาปฏิชีวนะก่อน iron ≥2 ชั่วโมง หรือ 6 ชั่วโมงหลัง", drpKey:DRPK.timing,
+  },
+  /* ===== VITAMIN D + THIAZIDE (hypercalcemia) ===== */
+  {
+    id:"vitd-thiazide", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"calcitriol")||dm(a,"alfacalcidol")||dm(a,"paricalcitol")||dm(a,"cholecalciferol")||dm(a,"ergocalciferol")||dm(a,"vit d")||dm(a,"vitamin d")) && (dm(b,"hydrochlorothiazide")||dm(b,"indapamide")||dm(b,"chlorthalidone")||dm(b,"thiazide")),
+    msg:"Vitamin D analog + Thiazide — ลด renal Ca excretion ร่วมกับเพิ่มการดูดซึม Ca → hypercalcemia",
+    rec:"ติดตาม serum Ca อย่างใกล้ชิด; ลดขนาด Vit D หรือเปลี่ยนยาขับปัสสาวะ", drpKey:DRPK.electrolyte,
+  },
+  /* ===== CALCINEURIN INHIBITOR (CYP3A4) ===== */
+  {
+    id:"cni-cyp3a4-inhib", sev:SEV.HIGH,
+    match:(a,b)=>(dm(a,"cyclosporine")||dm(a,"cyclosporin")||dm(a,"tacrolimus")) && (dm(b,"diltiazem")||dm(b,"verapamil")||dm(b,"fluconazole")||dm(b,"clarithromycin")||dm(b,"erythromycin")||dm(b,"azole")),
+    msg:"⚠️ Cyclosporine/Tacrolimus + Diltiazem/Verapamil/Azole/Macrolide — ยับยั้ง CYP3A4 → ↑ CNI level → nephrotoxicity",
+    rec:"ติดตาม trough level ของ CNI ใกล้ชิด; ปรับขนาดยา; ติดตาม Scr และ K⁺", drpKey:DRPK.ddi,
+  },
+  {
+    id:"cni-statin", sev:SEV.HIGH,
+    match:(a,b)=>(dm(a,"cyclosporine")||dm(a,"cyclosporin")||dm(a,"tacrolimus")) && (dm(b,"simvastatin")||dm(b,"atorvastatin")||dm(b,"rosuvastatin")||dm(b,"statin")),
+    msg:"⚠️ Cyclosporine/Tacrolimus + Statin — ↑ statin level มาก → myopathy/rhabdomyolysis",
+    rec:"หลีกเลี่ยง Simvastatin; ใช้ Pravastatin/Fluvastatin ขนาดต่ำ; ติดตาม CK", drpKey:DRPK.ddi,
+  },
+  /* ===== POTASSIUM BINDER timing ===== */
+  {
+    id:"kbinder-oral-timing", sev:SEV.LOW,
+    match:(a,b)=>(dm(a,"patiromer")||dm(a,"zirconium")||dm(a,"polystyrene sulfonate")||dm(a,"kalimate")||dm(a,"k⁺ binder")||dm(a,"k+ binder")) && (dm(b,"levothyroxine")||dm(b,"ciprofloxacin")||dm(b,"levofloxacin")||dm(b,"warfarin")||dm(b,"digoxin")||dm(b,"tacrolimus")||dm(b,"cyclosporine")),
+    msg:"Potassium binder + ยารับประทานอื่น — binder อาจจับยาอื่นลดการดูดซึม",
+    rec:"กินยาอื่นห่างจาก K-binder ≥3 ชั่วโมง (patiromer) หรือ ≥2 ชั่วโมง (ZS-9)", drpKey:DRPK.timing,
+  },
+  /* ===== FEBUXOSTAT + AZATHIOPRINE ===== */
+  {
+    id:"febuxostat-azathioprine", sev:SEV.HIGH,
+    match:(a,b)=>(dm(a,"febuxostat")||dm(a,"allopurinol")) && (dm(b,"azathioprine")||dm(b,"mercaptopurine")||dm(b,"6-mercaptopurine")),
+    msg:"⚠️ Allopurinol/Febuxostat + Azathioprine/Mercaptopurine — XO inhibition → ↑ thiopurine → myelosuppression รุนแรง",
+    rec:"หลีกเลี่ยงการใช้ร่วมกัน; ถ้าจำเป็น (allopurinol) ลด azathioprine 25-33%; ติดตาม CBC", drpKey:DRPK.ddi,
+  },
+  /* ===== DIGOXIN + VERAPAMIL ===== */
+  {
+    id:"digoxin-verapamil", sev:SEV.HIGH,
+    match:(a,b)=>dm(a,"digoxin") && dm(b,"verapamil"),
+    msg:"⚠️ Digoxin + Verapamil — ↑ Digoxin level → toxicity",
+    rec:"ลด Digoxin dose; ติดตาม Digoxin level และ ECG", drpKey:DRPK.ddi,
+  },
+  /* ===== QT prolongers triple ===== */
+  {
+    id:"qtc-macrolide-ondansetron", sev:SEV.MED,
+    match:(a,b)=>(dm(a,"clarithromycin")||dm(a,"azithromycin")||dm(a,"erythromycin")||dm(a,"moxifloxacin")||dm(a,"ciprofloxacin")||dm(a,"levofloxacin")) && dm(b,"ondansetron"),
+    msg:"Macrolide/Fluoroquinolone + Ondansetron — เพิ่ม QTc prolongation ร่วมกัน → เสี่ยง Torsades",
+    rec:"ติดตาม ECG; ตรวจ K⁺/Mg²⁺; หลีกเลี่ยงในผู้ป่วยที่มี QTc ยาวอยู่แล้ว", drpKey:DRPK.ddi,
+  },
+
   {
     id:"herb-turmeric-anticoag", sev:SEV.MED,
     match:(a,b)=>(dm(a,"ขมิ้น")||dm(a,"turmeric")||dm(a,"curcumin")) && (dm(b,"warfarin")||dm(b,"apixaban")||dm(b,"anticoag")),
@@ -367,7 +447,7 @@ const EGFR_RULES = [
 ];
 
 /* ---------- ฟังก์ชันวิเคราะห์หลัก ---------- */
-function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm: hasDM }) {
+function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm: hasDM, age, followUp, allergy }) {
   const allDrugs = [
     ...meds.map((m) => ({ name: m.drug, source: "med" })),
     ...otcItems.map((o) => ({ name: o.name, source: "otc" })),
@@ -601,6 +681,60 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, ph
       rec:"พิจารณา SGLT2i (dapagliflozin/empagliflozin) ถ้า eGFR≥20 และไม่มีข้อห้าม ตาม KDIGO 2024",
       drpKey:DRPK.omission, drugs:[], id:"omit_sglt2_dm" });
   }
+
+  // ---------- helper: statin presence ----------
+  const hasStatin = () => hasDrug("statin","atorvastatin","rosuvastatin","simvastatin","pravastatin","pitavastatin","fluvastatin");
+  const ageV = parseFloat(age);
+
+  // 7b. CKD G3+ ควรได้ statin (KDIGO lipid: age 50-79 / มี ASCVD risk) แต่ยังไม่มี
+  if (ckdNum >= 3 && !hasStatin() && (isNaN(ageV) || ageV >= 50)) {
+    addFinding({ sev:SEV.LOW,
+      msg:"CKD G3+ แต่ไม่มี statin — KDIGO lipid guideline แนะนำ statin ในผู้ป่วย CKD อายุ ≥50 ปี (หรือมีปัจจัยเสี่ยง)",
+      rec:"พิจารณาเริ่ม statin (atorvastatin/rosuvastatin) ตาม KDIGO ถ้าไม่มีข้อห้าม",
+      drpKey:DRPK.omission, drugs:[], id:"omit_statin_ckd" });
+  }
+
+  // 7c. Hypokalemia: K < 3.5 ร่วมยาขับ K (loop/thiazide)
+  if (!isNaN(kVal) && kVal < 3.5 && hasDrug("furosemide","torsemide","bumetanide","hydrochlorothiazide","indapamide","chlorthalidone","loop diuretic","thiazide")) {
+    addFinding({ sev: kVal < 3.0 ? SEV.HIGH : SEV.MED,
+      msg:`K⁺=${k} mmol/L (<3.5) ร่วมกับยาขับปัสสาวะที่ลดโพแทสเซียม — hypokalemia`,
+      rec:"พิจารณา K supplement (ระวังใน CKD), ลด/ปรับยาขับปัสสาวะ; ติดตาม K⁺ และ ECG",
+      drpKey:DRPK.electrolyte, drugs:[], id:"lab_hypok" });
+  }
+
+  // 7d. PPI ระยะยาวโดยไม่มี GI indication ชัดเจน (heuristic แบบอนุรักษ์นิยม)
+  const ppiMeds = allDrugs.filter((d) => dm(d.name,"ppi")||dm(d.name,"omeprazole")||dm(d.name,"pantoprazole")||dm(d.name,"esomeprazole")||dm(d.name,"lansoprazole")||dm(d.name,"rabeprazole"));
+  const hasGIprotectNeed = hasDrug("warfarin","apixaban","rivaroxaban","dabigatran","edoxaban","aspirin","clopidogrel","ticagrelor","ibuprofen","naproxen","diclofenac","celecoxib","nsaid","prednisolone","corticosteroid");
+  if (ppiMeds.length && !hasGIprotectNeed) {
+    addFinding({ sev:SEV.LOW,
+      msg:`มี PPI (${ppiMeds.map((m)=>m.name).join(", ")}) โดยไม่พบยา/ภาวะที่ต้องป้องกัน GI ชัดเจน — อาจใช้โดยไม่มีข้อบ่งชี้ (ทบทวน)`,
+      rec:"ทบทวนข้อบ่งใช้ PPI; ถ้าไม่มี indication พิจารณา deprescribe / step-down",
+      drpKey:DRPK.no_indication, drugs:ppiMeds.map((m)=>m.name), id:"ppi_noind" });
+  }
+
+  // 7e. Monitoring required: K ผิดปกติ หรือใช้ยาที่ต้องติดตาม แต่ยังไม่ได้นัดติดตาม
+  const needsMonitor = hasDrug("acei","arb","enalapril","losartan","valsartan","ramipril","spironolactone","eplerenone","k-sparing","furosemide","torsemide","hydrochlorothiazide","digoxin","lithium","warfarin","tacrolimus","cyclosporine") || (!isNaN(kVal) && (kVal > 5.0 || kVal < 3.5));
+  const hasFollowUp = followUp != null && String(followUp).trim() !== "";
+  if (needsMonitor && !hasFollowUp) {
+    addFinding({ sev:SEV.LOW,
+      msg:"มียาที่ต้องติดตามแล็บ (RAAS/diuretic/digoxin/lithium/CNI) หรือเกลือแร่ผิดปกติ แต่ยังไม่ระบุการนัดติดตาม",
+      rec:"นัดติดตาม K⁺/Scr (และ drug level ถ้าจำเป็น) ตามความเสี่ยง; บันทึกวันนัดติดตาม",
+      drpKey:DRPK.monitoring, drugs:[], id:"monitor_required" });
+  }
+
+  // 7f. Allergy / cross-sensitivity (ถ้าส่ง allergy string และมี checkAllergyConflict)
+  if (allergy && String(allergy).trim() && typeof checkAllergyConflict === "function") {
+    allDrugs.forEach((d) => {
+      const ac = checkAllergyConflict(d.name, allergy);
+      if (ac && ac.conflict) {
+        addFinding({ sev:SEV.HIGH,
+          msg:`⚠️ ${d.name} — ${ac.reason || "ขัดกับประวัติแพ้ยา"}`,
+          rec:"ห้ามใช้; เลือกยาทดแทนนอกกลุ่มที่แพ้; แจ้งแพทย์และบันทึกการแพ้",
+          drpKey:DRPK.allergy, drugs:[d.name], id:"allergy_"+d.name });
+      }
+    });
+  }
+
   // Sort by severity
   const order = { HIGH:0, MEDIUM:1, LOW:2 };
   findings.sort((a,b) => (order[a.sev]||2) - (order[b.sev]||2));
@@ -718,6 +852,28 @@ const DDI_SIMPLE = [
   { a:["simvastatin","atorvastatin","rosuvastatin","statin"], b:["gemfibrozil"], severity:"major", message:"Statin + Gemfibrozil — เสี่ยง Rhabdomyolysis รุนแรง ไม่ควรใช้ร่วมกัน ควรเปลี่ยนเป็น Fenofibrate (ปลอดภัยกว่า)" },
   /* TMP-SMX + ACEI/ARB */
   { a:["trimethoprim","tmp-smx","sulfamethoxazole","co-trimoxazole"], b:["enalapril","lisinopril","ramipril","losartan","valsartan"], severity:"major", message:"TMP-SMX + ACEI/ARB — TMP บล็อก Tubular K+ secretion ร่วมกับ ACEI/ARB เสี่ยง Hyperkalemia รุนแรงใน CKD ควรติดตาม K+ ภายใน 3-5 วัน" },
+  /* Phosphate binder / Calcium + Levothyroxine */
+  { a:["calcium carbonate","calcium acetate","sevelamer","lanthanum","sucroferric","aluminum hydroxide","แคลเซียม"], b:["levothyroxine"], severity:"moderate", message:"Phosphate binder/Calcium + Levothyroxine — ลดการดูดซึม Levothyroxine มาก ควรกินห่างกันอย่างน้อย 4 ชม. และติดตาม TSH" },
+  /* Iron + Levothyroxine */
+  { a:["ferrous fumarate","ferrous sulfate","ferrous gluconate","iron","ธาตุเหล็ก"], b:["levothyroxine"], severity:"moderate", message:"Iron + Levothyroxine — เกิด chelation ลดการดูดซึม Levothyroxine ควรกินห่างกันอย่างน้อย 4 ชม." },
+  /* Iron + Quinolone/Tetracycline */
+  { a:["ferrous fumarate","ferrous sulfate","ferrous gluconate","iron","ธาตุเหล็ก"], b:["ciprofloxacin","levofloxacin","moxifloxacin","fluoroquinolone","doxycycline","tetracycline"], severity:"moderate", message:"Iron + Quinolone/Tetracycline — chelation ลดการดูดซึมยาปฏิชีวนะ ควรกินยาปฏิชีวนะก่อน iron 2 ชม. หรือ 6 ชม.หลัง" },
+  /* Vitamin D analog + Thiazide */
+  { a:["calcitriol","alfacalcidol","paricalcitol","cholecalciferol","ergocalciferol"], b:["hydrochlorothiazide","indapamide","chlorthalidone","thiazide"], severity:"moderate", message:"Vitamin D analog + Thiazide — ลด renal Ca excretion → Hypercalcemia ควรติดตาม serum Ca" },
+  /* Calcineurin inhibitor + CYP3A4 inhibitors */
+  { a:["cyclosporine","cyclosporin","tacrolimus"], b:["diltiazem","verapamil","fluconazole","clarithromycin","erythromycin","ketoconazole","itraconazole"], severity:"major", message:"Cyclosporine/Tacrolimus + CYP3A4 inhibitor (Diltiazem/Verapamil/Azole/Macrolide) — เพิ่มระดับยากดภูมิ → Nephrotoxicity ควรติดตาม trough level และ Scr" },
+  /* Calcineurin inhibitor + NSAID */
+  { a:["cyclosporine","cyclosporin","tacrolimus"], b:["ibuprofen","naproxen","diclofenac","celecoxib","nsaid"], severity:"major", message:"Cyclosporine/Tacrolimus + NSAID — Nephrotoxicity รุนแรง ควรหลีกเลี่ยงการใช้ร่วมกัน" },
+  /* Febuxostat + Azathioprine */
+  { a:["febuxostat","allopurinol"], b:["azathioprine","mercaptopurine","6-mercaptopurine"], severity:"major", message:"Febuxostat/Allopurinol + Azathioprine — XO inhibition ทำให้ thiopurine สะสม เสี่ยง Myelosuppression รุนแรง ควรหลีกเลี่ยงหรือลด azathioprine 25-33%" },
+  /* Digoxin + Verapamil */
+  { a:["digoxin"], b:["verapamil"], severity:"major", message:"Digoxin + Verapamil — Verapamil เพิ่มระดับ Digoxin เสี่ยง toxicity ควรลด Digoxin dose และติดตาม level" },
+  /* SGLT2i + Loop/Thiazide */
+  { a:["dapagliflozin","empagliflozin","canagliflozin","ertugliflozin","sglt2"], b:["furosemide","torsemide","bumetanide","hydrochlorothiazide","indapamide","loop diuretic"], severity:"moderate", message:"SGLT2 inhibitor + Diuretic — เสริมฤทธิ์ขับน้ำ เสี่ยง Volume depletion และ AKI ใน CKD ควรติดตาม fluid status และ Scr" },
+  /* Potassium binder + oral drugs */
+  { a:["patiromer","zirconium","polystyrene sulfonate","kalimate"], b:["levothyroxine","ciprofloxacin","levofloxacin","warfarin","digoxin","tacrolimus","cyclosporine"], severity:"minor", message:"Potassium binder + ยารับประทานอื่น — binder จับยาอื่นลดการดูดซึม ควรกินยาอื่นห่าง K-binder 2-3 ชม." },
+  /* QT prolongers combination */
+  { a:["clarithromycin","azithromycin","erythromycin","moxifloxacin","ciprofloxacin","levofloxacin"], b:["ondansetron","amiodarone","domperidone"], severity:"moderate", message:"Macrolide/Fluoroquinolone + QT prolonger (Ondansetron/Amiodarone) — เพิ่ม QTc prolongation เสี่ยง Torsades ควรติดตาม ECG และ K+/Mg+" },
 ];
 
 function checkDDI(drugList) {
@@ -809,6 +965,34 @@ const DOSE_ADJ_DB = [
   { drugs:["dabigatran"], checks:[
     { egfrMax:30, level:"avoid", message:"Dabigatran: ห้ามใช้ eGFR < 30 80% ขับทางไต เสี่ยง Accumulation และเลือดออกรุนแรง ใช้ Apixaban แทน" },
   ]},
+  { drugs:["edoxaban"], checks:[
+    { egfrMax:15, level:"avoid", message:"Edoxaban: ห้ามใช้ CrCl < 15 ใช้ Apixaban หรือ Warfarin แทน" },
+    { egfrMax:50, level:"reduce", message:"Edoxaban: ลด dose เป็น 30 mg วันละครั้ง ถ้า CrCl 15-50 (AF)" },
+  ]},
+  { drugs:["rivaroxaban"], checks:[
+    { egfrMax:15, level:"avoid", message:"Rivaroxaban: หลีกเลี่ยง CrCl < 15 ใช้ Apixaban แทน" },
+    { egfrMax:50, level:"reduce", message:"Rivaroxaban: AF ลด dose เป็น 15 mg วันละครั้ง ถ้า CrCl 15-49" },
+  ]},
+  { drugs:["clarithromycin"], checks:[
+    { egfrMax:30, level:"reduce", message:"Clarithromycin: ลด dose 50% ถ้า eGFR < 30 เป็น CYP3A4 inhibitor แรง ระวัง interaction และ QTc" },
+  ]},
+  { drugs:["cefixime","cefdinir"], checks:[
+    { egfrMax:20, level:"reduce", message:"Cefixime/Cefdinir: ลด dose ~50% ถ้า eGFR < 20" },
+    { egfrMax:60, level:"reduce", message:"Cefixime/Cefdinir: ลด dose ~25% ถ้า eGFR 20-60" },
+  ]},
+  { drugs:["fluconazole"], checks:[
+    { egfrMax:50, level:"reduce", message:"Fluconazole: ลด maintenance dose 50% ถ้า eGFR < 50 (loading dose ปกติ)" },
+  ]},
+  { drugs:["amantadine"], checks:[
+    { egfrMax:50, level:"reduce", message:"Amantadine: ปรับระยะห่าง/ลด dose ถ้า eGFR < 50 สะสมได้ง่าย" },
+  ]},
+  { drugs:["sitagliptin"], checks:[
+    { egfrMax:30, level:"reduce", message:"Sitagliptin: ลด dose 25 mg/วัน ถ้า eGFR < 30" },
+    { egfrMax:45, level:"reduce", message:"Sitagliptin: ลด dose 50 mg/วัน ถ้า eGFR 30-44" },
+  ]},
+  { drugs:["probenecid","benzbromarone"], checks:[
+    { egfrMax:30, level:"avoid", message:"Probenecid/Benzbromarone (uricosuric): ไม่ออกฤทธิ์และเสี่ยง urate nephropathy ที่ eGFR < 30 หลีกเลี่ยง" },
+  ]},
 ];
 
 function checkDoseAdjustment(drugName, egfr) {
@@ -882,6 +1066,21 @@ const CONTRA_DB = [
       { egfrMax:30, level:"contraindicated", message:"Tramadol: ห้ามใช้ eGFR < 30 Metabolite M1 สะสม เสี่ยง Seizure และ CNS toxicity ใช้ Paracetamol แทน" },
     ]
   },
+  { drugs:["codeine"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Codeine: ห้ามใช้ eGFR < 30 Morphine-6-glucuronide สะสม เสี่ยง Respiratory depression ใช้ Paracetamol แทน" },
+    ]
+  },
+  { drugs:["fenofibrate"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Fenofibrate: หลีกเลี่ยง eGFR < 30 เพิ่ม Scr และเสี่ยง Rhabdomyolysis ใช้ Ezetimibe หรือ statin แทน" },
+    ]
+  },
+  { drugs:["benzbromarone","probenecid"],
+    checks:[
+      { egfrMax:30, level:"contraindicated", message:"Uricosuric (Probenecid/Benzbromarone): ไม่ออกฤทธิ์และเสี่ยง urate nephropathy ที่ eGFR < 30 หลีกเลี่ยง" },
+    ]
+  },
 ];
 
 function checkContraindicated(drugName, egfr) {
@@ -899,4 +1098,16 @@ function checkContraindicated(drugName, egfr) {
   return null;
 }
 
-Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose, generateCounselingNote, diffMedLists, checkDDI, checkDoseAdjustment, checkContraindicated });
+/* =========================================================================
+   summarizeDrpKeys(findings) — คืน array ของ drpKey (NEW taxonomy) ที่ไม่ซ้ำ
+   ใช้ให้ UI auto-populate drps[] ที่บันทึก จากผลการวิเคราะห์ (single source of truth)
+   รับได้ทั้ง [{drpKey,...}] หรือ object ผลลัพธ์ analyzeDRPs ({findings:[...]})
+   ========================================================================= */
+function summarizeDrpKeys(findings) {
+  let arr = findings;
+  if (findings && !Array.isArray(findings) && Array.isArray(findings.findings)) arr = findings.findings;
+  if (!Array.isArray(arr)) return [];
+  return [...new Set(arr.map((f) => f && f.drpKey).filter(Boolean))];
+}
+
+Object.assign(window, { analyzeDRPs, DRP_SEV_META, SEV, DRPK, dailyDoseMg, parseStrengthNum, unitsPerDayOf, fmtDose, generateCounselingNote, diffMedLists, checkDDI, checkDoseAdjustment, checkContraindicated, summarizeDrpKeys });

@@ -319,6 +319,106 @@ const DRUG_DB = [
     note:"ลด dose ใน CKD; CNS depression ↑ ใน uremia; avoid long-term; fall risk" },
   { name:"Zolpidem", cls:"Non-BZD sedative-hypnotic", strengths:["5 mg","10 mg"], flags:["renal"],
     note:"เริ่ม 5 mg ใน CKD; short-term only; fall risk ↑ ใน elderly+CKD" },
+
+  /* ===== POTASSIUM BINDERS ===== */
+  { name:"Patiromer", cls:"K⁺ binder (new)", strengths:["8.4 g","16.8 g","25.2 g"], flags:[],
+    note:"✓ New-gen K-binder; 1 ครั้ง/วัน; onset 7h; กินห่างยาอื่น ≥3h; ระวัง hypomagnesemia" },
+  { name:"Sodium zirconium cyclosilicate", cls:"K⁺ binder (new)", strengths:["5 g","10 g"], flags:[],
+    note:"✓ Lokelma/ZS-9; onset เร็ว (1-2h); acute hyperkalemia; กินห่างยาอื่น ≥2h; Na load ระวัง edema" },
+  { name:"Calcium polystyrene sulfonate", cls:"K⁺ binder (resin)", strengths:["15 g sachet"], flags:[],
+    note:"Kalimate; ลด K⁺; Ca-based (ไม่เพิ่ม Na); ระวังท้องผูก; กินห่างยาอื่น ≥3h" },
+  { name:"Sodium polystyrene sulfonate", cls:"K⁺ binder (resin, old)", strengths:["15 g sachet"], flags:[],
+    note:"ลด K⁺; ระวัง intestinal necrosis ถ้าใช้ร่วม sorbitol; onset ช้า 4-6h; Na load" },
+
+  /* ===== PHOSPHATE BINDERS (เพิ่มเติม) ===== */
+  { name:"Calcium acetate", cls:"Phosphate binder (Ca-based)", strengths:["667 mg"], flags:[],
+    note:"กินพร้อมอาหาร; ให้ elemental Ca น้อยกว่า Ca carbonate ต่อ binding; ระวัง hypercalcemia" },
+  { name:"Sucroferric oxyhydroxide", cls:"Phosphate binder (Fe-based)", strengths:["500 mg (iron)"], flags:[],
+    note:"Velphoro; เคี้ยวพร้อมอาหาร; ลด pill burden; ถ่ายดำ; ไม่มี Ca/Al load" },
+
+  /* ===== Vit D / MINERAL (เพิ่มเติม) ===== */
+  { name:"Ergocalciferol (Vit D2)", cls:"Vit D supplement", strengths:["20000 IU","50000 IU"], flags:[],
+    note:"Replete 25-OH Vit D ใน CKD 1-4; ก่อนเริ่ม active Vit D" },
+  { name:"Etelcalcetide", cls:"Calcimimetic (IV)", strengths:["2.5 mg","5 mg","10 mg"], flags:[],
+    note:"IV หลัง HD 3 ครั้ง/สัปดาห์; ลด PTH ใน SHPT บน dialysis; ระวัง hypocalcemia" },
+
+  /* ===== ESA / ANEMIA (เพิ่มเติม) ===== */
+  { name:"Roxadustat", cls:"HIF-PHI (oral ESA)", strengths:["20 mg","50 mg","100 mg"], flags:[],
+    note:"Oral; กระตุ้น endogenous EPO; ใช้ใน anemia of CKD; target Hb 10-11; ระวัง thrombosis" },
+  { name:"Ferrous gluconate", cls:"Oral iron", strengths:["300 mg (35 mg Fe)"], flags:[],
+    note:"GI side effects น้อยกว่า sulfate; กินตอนท้องว่าง; ห่าง antacid/phosphate binder ≥2h" },
+
+  /* ===== SGLT2i (เพิ่มเติม) ===== */
+  { name:"Ertugliflozin", cls:"SGLT2 inhibitor", strengths:["5 mg","15 mg"], flags:["renal"],
+    note:"ไม่แนะนำเริ่มถ้า eGFR<45 (ฤทธิ์ลดน้ำตาลด้อย); หยุดถ้า eGFR<30; ระวัง volume depletion" },
+
+  /* ===== GLP-1 (เพิ่มเติม) ===== */
+  { name:"Dulaglutide", cls:"GLP-1 receptor agonist", strengths:["0.75 mg","1.5 mg","3 mg","4.5 mg"], flags:[],
+    note:"Once-weekly SC; ไม่ต้องปรับ dose ใน CKD; AWARD-7 renal benefit; ระวัง GI dehydration" },
+
+  /* ===== IMMUNOSUPPRESSANTS (transplant) ===== */
+  { name:"Tacrolimus", cls:"Calcineurin inhibitor", strengths:["0.5 mg","1 mg","5 mg"], flags:["nephrotoxic"],
+    note:"⚠️ Nephrotoxic; ติดตาม trough level; CYP3A4 substrate (interaction กับ azole/macrolide/CCB); narrow TI" },
+  { name:"Cyclosporine", cls:"Calcineurin inhibitor", strengths:["25 mg","50 mg","100 mg"], flags:["nephrotoxic"],
+    note:"⚠️ Nephrotoxic (vasoconstriction); ติดตาม level; CYP3A4 substrate; ระวัง hyperkalemia/HTN" },
+  { name:"Mycophenolate mofetil", cls:"Antimetabolite immunosuppressant", strengths:["250 mg","500 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ตาม eGFR แต่ระวัง toxicity สะสมใน severe CKD; GI/hematologic SE; ห่าง antacid" },
+  { name:"Mycophenolate sodium", cls:"Antimetabolite immunosuppressant", strengths:["180 mg","360 mg"], flags:[],
+    note:"Enteric-coated; 360 mg ≈ 500 mg MMF; GI tolerability ดีขึ้น; ติดตาม CBC" },
+  { name:"Azathioprine", cls:"Antimetabolite immunosuppressant", strengths:["50 mg"], flags:["renal"],
+    note:"⚠️ ห้ามร่วม Allopurinol/Febuxostat (XO inhibition → myelosuppression); ลด dose ใน CKD; ติดตาม CBC" },
+  { name:"Everolimus", cls:"mTOR inhibitor", strengths:["0.25 mg","0.5 mg","0.75 mg","1 mg"], flags:[],
+    note:"ติดตาม trough level; CYP3A4 substrate; proteinuria/dyslipidemia; ไม่ต้องปรับตาม renal" },
+  { name:"Sirolimus", cls:"mTOR inhibitor", strengths:["0.5 mg","1 mg","2 mg"], flags:[],
+    note:"ติดตาม trough level; CYP3A4 substrate; proteinuria; delayed wound healing" },
+
+  /* ===== THYROID ===== */
+  { name:"Levothyroxine", cls:"Thyroid hormone", strengths:["25 mcg","50 mcg","100 mcg"], flags:[],
+    note:"ไม่ต้องปรับ dose ตาม eGFR; กินท้องว่าง; ห่าง Ca/Fe/phosphate binder ≥4h (ลดการดูดซึม)" },
+
+  /* ===== H2 / PPI (เพิ่มเติม) ===== */
+  { name:"Famotidine", cls:"H2 blocker", strengths:["20 mg","40 mg"], flags:["renal"],
+    note:"ลด dose: eGFR<50 → 20 mg/day; <10 → 20 mg q48h; ระวัง CNS effect ใน uremia" },
+  { name:"Lansoprazole", cls:"PPI", strengths:["15 mg","30 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose; ระวัง Mg²⁺ ต่ำเมื่อใช้ long-term" },
+
+  /* ===== ANTIBIOTICS (เพิ่มเติม) ===== */
+  { name:"Moxifloxacin", cls:"Fluoroquinolone", strengths:["400 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ตาม eGFR (hepatic clearance); ระวัง QTc prolongation" },
+  { name:"Azithromycin", cls:"Macrolide", strengths:["250 mg","500 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD; ระวัง QTc; CYP3A4 interaction น้อยกว่า clarithromycin" },
+  { name:"Clarithromycin", cls:"Macrolide", strengths:["250 mg","500 mg"], flags:["renal"],
+    note:"eGFR<30: ลด dose 50%; CYP3A4 inhibitor แรง (statin/colchicine/digoxin); ระวัง QTc" },
+  { name:"Doxycycline", cls:"Tetracycline", strengths:["100 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD (preferred tetracycline); ห่าง Ca/Fe/antacid ≥2h" },
+  { name:"Cloxacillin", cls:"Antistaphylococcal penicillin", strengths:["250 mg","500 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ใน CKD (hepatic + renal); penicillin allergy cross-reactivity" },
+  { name:"Cefdinir", cls:"Cephalosporin 3rd gen (oral)", strengths:["100 mg","300 mg"], flags:["renal"],
+    note:"eGFR<30: 300 mg q24h; ห่าง Fe/antacid ≥2h (ลดการดูดซึม)" },
+  { name:"Cefixime", cls:"Cephalosporin 3rd gen (oral)", strengths:["100 mg","200 mg","400 mg"], flags:["renal"],
+    note:"eGFR 20-60: ลด 25%; <20: ลด 50%" },
+  { name:"Ceftriaxone", cls:"Cephalosporin 3rd gen (IV/IM)", strengths:["1 g IV","2 g IV"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD (dual hepatic/renal); ระวัง biliary sludge" },
+  { name:"Clindamycin", cls:"Lincosamide", strengths:["150 mg","300 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD (hepatic); ระวัง C. difficile colitis" },
+  { name:"Metronidazole", cls:"Nitroimidazole", strengths:["200 mg","400 mg","500 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ปกติ; ESRD/HD: พิจารณาลด 50%; ห้ามดื่มสุรา (disulfiram)" },
+  { name:"Acyclovir", cls:"Antiviral (nucleoside)", strengths:["200 mg","400 mg","800 mg"], flags:["renal","nephrotoxic"],
+    note:"⚠️ ปรับ dose+ระยะห่างตาม eGFR; crystalline nephropathy; ให้ hydration; eGFR<25 ยืดเป็น q24h" },
+  { name:"Valacyclovir", cls:"Antiviral (prodrug)", strengths:["500 mg","1000 mg"], flags:["renal","nephrotoxic"],
+    note:"⚠️ ปรับ dose ตาม eGFR; eGFR<30 ลด dose มาก; ระวัง neurotoxicity/AKI" },
+
+  /* ===== GOUT (เพิ่มเติม) ===== */
+  { name:"Probenecid", cls:"Uricosuric", strengths:["500 mg"], flags:["renal","contra"],
+    note:"⚠️ Ineffective ถ้า eGFR<30; เพิ่มเสี่ยง urate nephropathy; หลีกเลี่ยงใน CKD ระยะสูง" },
+
+  /* ===== ANTIPLATELET / DOAC (เพิ่มเติม) ===== */
+  { name:"Clopidogrel", cls:"Antiplatelet (P2Y12)", strengths:["75 mg"], flags:[],
+    note:"✓ ไม่ต้องปรับ dose ใน CKD; prodrug (CYP2C19); ระวัง interaction กับ omeprazole" },
+  { name:"Ticagrelor", cls:"Antiplatelet (P2Y12)", strengths:["60 mg","90 mg"], flags:[],
+    note:"ไม่ต้องปรับ dose ตาม eGFR; CYP3A4 substrate; dyspnea; ระวังเลือดออก" },
+  { name:"Edoxaban", cls:"DOAC (Factor Xa inhibitor)", strengths:["15 mg","30 mg","60 mg"], flags:["renal","contra"],
+    note:"AF: 30 mg OD ถ้า CrCl 15-50; ⚠️ ห้าม/ไม่แนะนำถ้า CrCl>95 (AF) หรือ <15" },
 ];
 
 const FLAG_LABEL = {

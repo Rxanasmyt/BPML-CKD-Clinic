@@ -45,15 +45,15 @@ const B=s.Babel;
 const A=s.analyzeDRPs; let ok=true;
 function has(r,pred,name){const hit=r.findings.some(pred);console.log((hit?'OK   ':'FAIL ')+name);if(!hit)ok=false;}
 // Metformin 850 1x2 = 1700/day must exceed eGFR=35 cap (1000)
-has(A({meds:[{drug:'Metformin',strength:'850 mg',qtyPerDose:1,freqPerDay:2}],otcItems:[],egfr:35,ckdStage:'3b'}),f=>f.drpKey==='overdose'&&f.sev==='HIGH','Metformin overdose @eGFR35');
+has(A({meds:[{drug:'Metformin',strength:'850 mg',qtyPerDose:1,freqPerDay:2}],otcItems:[],egfr:35,ckdStage:'3b'}),f=>f.drpKey==='supratherapeutic_dose'&&f.sev==='HIGH','Metformin overdose @eGFR35');
 // 500 1x2 = 1000/day within cap → NO overdose
 const r2=A({meds:[{drug:'Metformin',strength:'500 mg',qtyPerDose:1,freqPerDay:2}],otcItems:[],egfr:35,ckdStage:'3b'});
-console.log((!r2.findings.some(f=>f.drpKey==='overdose')?'OK   ':'FAIL ')+'Metformin 1000/day no false overdose');
-if(r2.findings.some(f=>f.drpKey==='overdose'))ok=false;
+console.log((!r2.findings.some(f=>f.drpKey==='supratherapeutic_dose')?'OK   ':'FAIL ')+'Metformin 1000/day no false overdose');
+if(r2.findings.some(f=>f.drpKey==='supratherapeutic_dose'))ok=false;
 // actual intake > prescribed → adherence
 has(A({meds:[{drug:'Gabapentin',strength:'300 mg',qtyPerDose:1,freqPerDay:1,sameAsPrescribed:false,actualQty:1,actualFreq:3}],otcItems:[],egfr:20,ckdStage:'4'}),f=>f.drpKey==='adherence','Gabapentin adherence discrepancy');
 // supplement overdose — Vit C 1000x2
-has(A({meds:[],otcItems:[{name:'Vitamin C (วิตามิน ซี)',dose:'1000 mg x2'}],egfr:40,ckdStage:'3a'}),f=>f.drpKey==='overdose'&&f.sev==='HIGH','Vitamin C overdose');
+has(A({meds:[],otcItems:[{name:'Vitamin C (วิตามิน ซี)',dose:'1000 mg x2'}],egfr:40,ckdStage:'3a'}),f=>f.drpKey==='supratherapeutic_dose'&&f.sev==='HIGH','Vitamin C overdose');
 process.exit(ok?0:1);
 "
 # Every line must print OK. FAIL = the dose-DRP detection regressed.

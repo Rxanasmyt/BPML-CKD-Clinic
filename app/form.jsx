@@ -154,6 +154,9 @@ function ckdStageFromEgfr(egfr) {
   return "G5";
 }
 
+// แปลง "G3a" → "3a" ให้ตรงกับ CKD_STAGES ที่ฟอร์มเก็บ
+function normStage(s) { return s ? String(s).replace(/^G/i, "").trim() : ""; }
+
 /* ---------- FloatInput ---------- */
 function FloatInput({ label, value, onChange, type, unit, style: extraStyle, ...rest }) {
   const [focused, setFocused] = React.useState(false);
@@ -414,7 +417,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       hn: "", name: "", age: "", sex: "male", ckdStage: "", date: new Date().toISOString().slice(0,10), scr: "", egfr: "", k: "", na: "",
       hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
       bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
-      meds: [], otcHerbal: false, otcDetail: "", drps: [], drpDetail: "", drpAcks: {},
+      meds: [], otcItems: [], otcHerbal: false, otcDetail: "", drps: [], drpFindings: [], drpDetail: "", drpAcks: {}, drpManualKeys: [], drpRemovedKeys: [],
       comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
       interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
       pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
@@ -461,6 +464,17 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       setF((p) => ({ ...p, egfr: String(computed) }));
     }
   }, [f.scr, f.age, f.sex, egfrManual]);
+
+  // TASK 3: auto-fill CKD stage from eGFR when stage is empty
+  React.useEffect(() => {
+    if (f.ckdStage) return;
+    const st = ckdStageFromEgfr(f.egfr);
+    if (st) setF((p) => (p.ckdStage ? p : { ...p, ckdStage: normStage(st) }));
+  }, [f.egfr, f.ckdStage]);
+
+  // TASK 3: detect contradiction between entered stage and eGFR-calculated stage
+  const egfrStage = React.useMemo(() => normStage(ckdStageFromEgfr(f.egfr)), [f.egfr]);
+  const stageContradiction = !!(f.ckdStage && egfrStage && f.ckdStage !== egfrStage);
 
   // Feature 3 + 5: copy from last visit modal state
   const [copyModalVisit, setCopyModalVisit] = React.useState(null);
@@ -525,6 +539,34 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     setCopyModalVisit(null);
   }
 
+  // TASK 5: one-tap copy of meds + labs + allergy + otcItems from a visit
+  function oneTapCopyVisit(v) {
+    if (!v) return;
+    setF((p) => ({
+      ...p,
+      meds: (v.meds || []).map((m) => ({ ...m })),
+      otcItems: (v.otcItems || []).map((o) => ({ ...o })),
+      allergy: v.allergy || p.allergy,
+      egfr: v.egfr || p.egfr,
+      scr: v.scr || p.scr,
+      k: v.k || p.k,
+      na: v.na || p.na,
+      hb: v.hb || p.hb,
+      hco3: v.hco3 || p.hco3,
+      phos: v.phos || p.phos,
+      ca: v.ca || p.ca,
+      uacr: v.uacr || p.uacr,
+      bpSys: v.bpSys || p.bpSys,
+      bpDia: v.bpDia || p.bpDia,
+    }));
+    if (v.egfr) setEgfrManual(true);
+    // scroll focus to labs section so values can be updated quickly
+    setTimeout(() => {
+      const el = sectionRefs.current["1"];
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
+
   const [showVisitPicker, setShowVisitPicker] = React.useState(false);
   const prevVisits = React.useMemo(() => records
     .filter((r) => r.hn === f.hn.trim() && r.id !== initial?.id && (r.meds?.length > 0 || r.ckdStage))
@@ -579,12 +621,89 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     return ckdStageFromEgfr(f.egfr);
   }, [egfrAutoVal, egfrManual, f.egfr]);
 
+  // ===== TASK 1: DRP single source of truth =====
+  // analyzeDRPs() is the single analyzer. Findings drive the saved drps[].
+  // Final drps[] = (auto keys ∪ manual-added) − manual-removed.
+  const drpFindings = React.useMemo(() => {
+    try {
+      if (typeof window.analyzeDRPs !== "function") return [];
+      const res = window.analyzeDRPs({
+        meds: f.meds, otcItems: f.otcItems || [], egfr: f.egfr, k: f.k, ckdStage: f.ckdStage,
+        hb: f.hb, hco3: f.hco3, phos: f.phos, ca: f.ca, bpSys: f.bpSys, bpDia: f.bpDia,
+        uacr: f.uacr, dm: f.dm, age: f.age, followUp: f.followUp, allergy: f.allergy,
+      });
+      return (res && Array.isArray(res.findings)) ? res.findings : [];
+    } catch (e) { return []; }
+  }, [f.meds, f.otcItems, f.egfr, f.k, f.ckdStage, f.hb, f.hco3, f.phos, f.ca, f.bpSys, f.bpDia, f.uacr, f.dm, f.age, f.followUp, f.allergy]);
+
+  const autoDrpKeys = React.useMemo(() =>
+    (typeof window.summarizeDrpKeys === "function") ? window.summarizeDrpKeys(drpFindings) : [],
+    [drpFindings]);
+
+  // Derived final key list = auto ∪ manual − removed
+  const finalDrpKeys = React.useMemo(() => {
+    const removed = new Set(f.drpRemovedKeys || []);
+    const set = new Set();
+    autoDrpKeys.forEach((k) => { if (!removed.has(k)) set.add(k); });
+    (f.drpManualKeys || []).forEach((k) => { if (!removed.has(k)) set.add(k); });
+    return [...set];
+  }, [autoDrpKeys, f.drpManualKeys, f.drpRemovedKeys]);
+
+  // Toggle a key in the manual chip selector (override on top of auto-analysis)
+  function toggleDrpKey(key) {
+    setF((p) => {
+      const auto = new Set(autoDrpKeys);
+      const manual = new Set(p.drpManualKeys || []);
+      const removed = new Set(p.drpRemovedKeys || []);
+      const currentlyOn = (auto.has(key) && !removed.has(key)) || manual.has(key);
+      if (currentlyOn) {
+        // turn OFF: drop manual, and if it was an auto key mark removed
+        manual.delete(key);
+        if (auto.has(key)) removed.add(key);
+      } else {
+        // turn ON: clear removed; if not auto, add manual
+        removed.delete(key);
+        if (!auto.has(key)) manual.add(key);
+      }
+      return { ...p, drpManualKeys: [...manual], drpRemovedKeys: [...removed] };
+    });
+  }
+
+  // Keep saved drps[] mirrored to derived final list (so risk engine / store stay consistent)
+  React.useEffect(() => {
+    setF((p) => {
+      const cur = p.drps || [];
+      const same = cur.length === finalDrpKeys.length && cur.every((k) => finalDrpKeys.includes(k));
+      return same ? p : { ...p, drps: finalDrpKeys };
+    });
+  }, [finalDrpKeys]);
+
+  const fidOf = (fd, i) => fd.id || ("f_" + i + "_" + (fd.msg || "").slice(0, 24));
+  const unackedHighFindings = React.useMemo(() =>
+    drpFindings.filter((fd, i) => fd.sev === "HIGH" && !(f.drpAcks || {})[fidOf(fd, i)]),
+    [drpFindings, f.drpAcks]);
+
+  function handleDrpFindings() { /* findings are computed in parent; panel only renders */ }
+
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
 
   function save() {
+    // TASK 1: block save if HIGH findings are not acknowledged
+    if (unackedHighFindings.length > 0) {
+      setActiveStep("4");
+      const el = sectionRefs.current["4"];
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      alert(`พบปัญหาด้านยาความเสี่ยงสูง ${unackedHighFindings.length} รายการที่ยังไม่ได้รับทราบ\nกรุณากด "รับทราบ" ในแผงผลวิเคราะห์ DRP ก่อนบันทึก`);
+      return;
+    }
     setSaving(true);
-    const rec = { ...f, riskScore: risk.score, riskBand: risk.band };
+    const rec = {
+      ...f,
+      riskScore: risk.score, riskBand: risk.band,
+      drps: finalDrpKeys,        // final key list (auto ∪ manual − removed)
+      drpFindings: drpFindings,  // full audit trail of the analysis
+    };
     if (!rec.createdBy) rec.createdBy = user.id;
     rec.meds = rec.meds.filter((m) => m.drug.trim());
     rec.meds.forEach((m) => RecentDrugs.record(m.drug));
@@ -706,6 +825,15 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
         <FormProgress active={activeStep} onStepClick={scrollToStep} />
 
+        {/* TASK 4: Previous-visit / Trend panel (appears when HN has prior visits) */}
+        {prevVisits.length > 0 && typeof window.PrevVisitPanel === "function" && (
+          <PrevVisitPanel
+            priorVisits={prevVisits}
+            current={f}
+            onOneTapCopy={oneTapCopyVisit}
+          />
+        )}
+
         {/* ส่วนที่ 1 */}
         <div ref={el => sectionRefs.current['1'] = el}>
         <FSection n="1" title="ข้อมูลผู้ป่วย" en="Patient Information" defaultOpen lockOpen>
@@ -744,6 +872,15 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
                     style={{ flex: "1 1 60px", maxWidth: 110, padding: "10px 0", border: `1px solid ${f.ckdStage === s ? "var(--brand)" : "var(--border)"}`, background: f.ckdStage === s ? "var(--brand)" : "var(--surface)", color: f.ckdStage === s ? "#fff" : "var(--ink-2)", borderRadius: 8, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--mono)" }}>{s}</button>
                 ))}
               </div>
+              {stageContradiction && (
+                <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 11px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 99, fontSize: 12, color: "#92400e", fontWeight: 600 }}>
+                  ⚠️ eGFR แนะนำ G{egfrStage} — ขัดกับที่เลือก (G{f.ckdStage})
+                  <button type="button" onClick={() => set("ckdStage", egfrStage)}
+                    style={{ border: "1px solid #d97706", background: "#fff", color: "#92400e", borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: "3px 9px", cursor: "pointer" }}>
+                    ใช้ค่าที่คำนวณ
+                  </button>
+                </div>
+              )}
             </Field>
           </div>
           <div style={{ ...fGrid, marginTop: 12 }}>
@@ -795,8 +932,12 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
             <RenalDoseCalc age={f.age} scr={f.scr} sex={f.sex} onFill={(v) => { set("egfr", v); setEgfrManual(true); }} />
 
-            {/* Feature 6: Lab Trend Sparkline */}
-            <LabSparkline hn={f.hn} records={records} currentEgfr={f.egfr} currentCr={f.scr} />
+            {/* แนวโน้มผลแล็บแบบย่อ — ดูเทียบ visit ก่อนหน้าได้ทันทีขณะกรอก */}
+            {prevVisits.length > 0 && typeof window.MultiLabTrend === "function" && (
+              <div style={{ width: "100%", marginTop: 4 }}>
+                <MultiLabTrend priorVisits={prevVisits} current={f} />
+              </div>
+            )}
 
             {/* K+ StepInput */}
             <div style={{ flex: "0 0 130px" }}>
@@ -1002,20 +1143,25 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         </FSection>
         </div>{/* /section-2-ref */}
 
-        {/* DRP Auto-analysis panel */}
+        {/* DRP Auto-analysis panel — single source of truth */}
         <DrpAnalysisPanel meds={f.meds} otcItems={f.otcItems || []} egfr={f.egfr} k={f.k} ckdStage={f.ckdStage}
           hb={f.hb} hco3={f.hco3} phos={f.phos} ca={f.ca} bpSys={f.bpSys} bpDia={f.bpDia} uacr={f.uacr} dm={f.dm}
+          age={f.age} followUp={f.followUp} allergy={f.allergy}
           acks={f.drpAcks || {}} user={user} counselingNote={f.counselingNote}
+          unackedHigh={unackedHighFindings}
           onAck={(fid, val) => setF((p) => { const a = { ...(p.drpAcks || {}) }; if (val) a[fid] = val; else delete a[fid]; return { ...p, drpAcks: a }; })}
           onCounsel={(note) => setF((p) => ({ ...p, counselingNote: note, interventions: [...new Set([...(p.interventions || []), "counsel"])] }))}
-          onApplyDrps={(keys) => setF((p) => ({ ...p, drps: [...new Set([...(p.drps || []), ...keys])] }))} />
+          onFindings={handleDrpFindings} />
 
         {/* ส่วนที่ 4 */}
         <div ref={el => sectionRefs.current['4'] = el}>
         <FSection n="4" title="ประเมินความปลอดภัยด้านยาใน CKD" en="CKD Safety Screening" defaultOpen
-          badge={f.drps.length ? f.drps.length + " ปัญหา" : null} badgeTone={f.drps.length ? "danger" : null}>
-          <ChipGroup options={DRP_OPTIONS} selected={f.drps} onToggle={(k) => toggle("drps", k)} danger />
-          {f.drps.length > 0 && (
+          badge={finalDrpKeys.length ? finalDrpKeys.length + " ปัญหา" : null} badgeTone={finalDrpKeys.length ? "danger" : null}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 10, lineHeight: 1.5 }}>
+            รายการ DRP มาจากการวิเคราะห์อัตโนมัติ (ป้าย <span style={{ fontSize: 9.5, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: "var(--brand)", color: "#fff", verticalAlign: "middle" }}>AUTO</span>) — เภสัชกรเพิ่ม/เอาออกได้เอง
+          </div>
+          <DrpChipSelector autoKeys={autoDrpKeys} selectedKeys={finalDrpKeys} onToggle={toggleDrpKey} />
+          {finalDrpKeys.length > 0 && (
             <Field label="รายละเอียดปัญหาด้านยา (DRP)" style={{ marginTop: 14 }}>
               <textarea style={{ ...inS, minHeight: 64, resize: "vertical" }} value={f.drpDetail} onChange={(e) => set("drpDetail", e.target.value)} placeholder="อธิบายปัญหาที่พบ..." />
             </Field>
@@ -1609,6 +1755,43 @@ function ChipGroup({ options, selected, onToggle, danger, small }) {
   );
 }
 
+/* ---------- DrpChipSelector — grouped DRP_OPTIONS, EN primary/TH secondary, auto badge ---------- */
+const DRP_GROUP_ORDER = ["Indication", "Effectiveness", "Safety", "Monitoring", "Process / Use"];
+function DrpChipSelector({ autoKeys, selectedKeys, onToggle }) {
+  const autoSet = new Set(autoKeys || []);
+  const selSet = new Set(selectedKeys || []);
+  const grouped = {};
+  DRP_OPTIONS.forEach((o) => { (grouped[o.group] = grouped[o.group] || []).push(o); });
+  const groups = DRP_GROUP_ORDER.filter((g) => grouped[g]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {groups.map((g) => (
+        <div key={g}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 7 }}>{g}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {grouped[g].map((o) => {
+              const on = selSet.has(o.key);
+              const isAuto = autoSet.has(o.key);
+              const c = on ? "#dc2626" : "var(--border)";
+              return (
+                <button key={o.key} type="button" onClick={() => onToggle(o.key)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 9, border: `1px solid ${c}`, background: on ? "#fef2f2" : "var(--surface)", color: on ? "#dc2626" : "var(--ink-2)", cursor: "pointer", fontFamily: "var(--sans)", textAlign: "left" }}>
+                  <CheckBox on={on} danger mini />
+                  <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                    <span style={{ fontSize: 13, fontWeight: on ? 700 : 600 }}>{o.en}</span>
+                    <span style={{ fontSize: 10.5, color: "var(--ink-2)", fontWeight: 400 }}>{o.th}</span>
+                  </span>
+                  {isAuto && <span style={{ fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: "var(--brand)", color: "#fff", marginLeft: 2 }}>AUTO</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CheckBox({ on, onClick, danger, mini }) {
   const c = danger ? "#dc2626" : "var(--brand)";
   return (
@@ -1777,17 +1960,17 @@ function HerbOtcSection({ items, onChange }) {
 }
 
 /* ---------- DrpAnalysisPanel ---------- */
-function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, acks = {}, user, counselingNote, onAck, onCounsel, onApplyDrps }) {
+function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, age, followUp, allergy, acks = {}, user, counselingNote, unackedHigh = [], onAck, onCounsel }) {
   const [open, setOpen] = React.useState(true);
   const fidOf = (fd, i) => fd.id || ("f_" + i + "_" + (fd.msg || "").slice(0, 24));
 
   const findings = React.useMemo(() => {
     try {
       if (typeof window.analyzeDRPs !== "function") return [];
-      const res = window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm });
+      const res = window.analyzeDRPs({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, age, followUp, allergy });
       return (res && Array.isArray(res.findings)) ? res.findings : [];
     } catch (e) { return []; }
-  }, [meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm]);
+  }, [meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm, age, followUp, allergy]);
 
   const drugCount = (meds || []).filter((m) => m.drug && m.drug.trim()).length;
   const itemCount = drugCount + (otcItems || []).length;
@@ -1814,12 +1997,9 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, c
   const sevColor = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[highestSev];
   const sevBg    = { HIGH: "#fef2f2", MEDIUM: "#fffbeb", LOW: "#eff6ff" }[highestSev];
 
-  function applyAll() {
-    const keys = [...new Set(findings.map((f) => f.drpKey).filter(Boolean))];
-    if (keys.length) onApplyDrps(keys);
-  }
-
   const SEV_ICON = { HIGH: "⚠️", MEDIUM: "!", LOW: "ℹ️" };
+  const SEV_ORDER = ["HIGH", "MEDIUM", "LOW"];
+  const SEV_GROUP_LABEL = { HIGH: "ความเสี่ยงสูง", MEDIUM: "ระวัง", LOW: "แจ้งเตือน" };
 
   return (
     <div style={{ marginBottom: 14, border: `1.5px solid ${sevColor}`, borderRadius: 14, overflow: "hidden", background: sevBg, boxShadow: `0 4px 18px ${sevColor}22` }}>
@@ -1837,40 +2017,57 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, c
         <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: sevColor, color: "#fff", flexShrink: 0 }}>{findings.length} รายการ</span>
         <span style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s", color: sevColor, flexShrink: 0 }}><Icon name="chevron" size={18} /></span>
       </button>
+      {/* TASK 1: block-save warning for unacknowledged HIGH findings */}
+      {open && unackedHigh.length > 0 && (
+        <div style={{ margin: "0 18px 12px", padding: "10px 13px", background: "#dc2626", color: "#fff", borderRadius: 10, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          ⛔ ต้องกด "รับทราบ" ปัญหาความเสี่ยงสูง {unackedHigh.length} รายการก่อนจึงจะบันทึกได้
+        </div>
+      )}
       {open && (
         <div style={{ padding: "0 18px 14px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {findings.map((fd, i) => {
-              const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[fd.sev] || "#64748b";
-              const label = { HIGH: "สูง", MEDIUM: "กลาง", LOW: "ต่ำ" }[fd.sev] || fd.sev;
-              const fid = fidOf(fd, i);
-              const ack = acks[fid];
-              return (
-                <div key={i} style={{ border: `1px solid ${ack ? "#86efac" : sc + "30"}`, borderRadius: 10, padding: "10px 13px", background: ack ? "#f0fdf4" : "var(--surface)" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                    <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.sev]} {label}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.msg}</div>
-                      {fd.rec && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.rec}</div>}
-                      {ack && <div style={{ fontSize: 11, color: "#15803d", marginTop: 5, fontWeight: 600 }}>✓ รับทราบโดย {ack.by} · {ack.at}</div>}
-                    </div>
-                    {onAck && (
-                      <button type="button"
-                        onClick={() => onAck(fid, ack ? null : { by: (user && user.name) || "เภสัชกร", at: new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) })}
-                        style={{ flexShrink: 0, border: `1px solid ${ack ? "#16a34a" : sc + "60"}`, background: ack ? "#16a34a" : "var(--surface)", color: ack ? "#fff" : sc, borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: "4px 9px", cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap", marginTop: 1 }}>
-                        {ack ? "✓ รับทราบแล้ว" : "รับทราบ"}
-                      </button>
-                    )}
-                  </div>
+          {/* grouped by severity */}
+          {SEV_ORDER.map((sev) => {
+            const group = findings.filter((fd) => fd.sev === sev);
+            if (!group.length) return null;
+            const sc = { HIGH: "#dc2626", MEDIUM: "#d97706", LOW: "#2563eb" }[sev];
+            return (
+              <div key={sev} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: sc, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 7 }}>{SEV_ICON[sev]} {SEV_GROUP_LABEL[sev]} ({group.length})</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {group.map((fd) => {
+                    const i = findings.indexOf(fd);
+                    const label = { HIGH: "สูง", MEDIUM: "กลาง", LOW: "ต่ำ" }[fd.sev] || fd.sev;
+                    const fid = fidOf(fd, i);
+                    const ack = acks[fid];
+                    return (
+                      <div key={i} style={{ border: `1px solid ${ack ? "#86efac" : sc + "30"}`, borderRadius: 10, padding: "10px 13px", background: ack ? "#f0fdf4" : "var(--surface)" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                          <span style={{ fontWeight: 800, fontSize: 12, padding: "2px 7px", borderRadius: 5, background: sc + "18", color: sc, flexShrink: 0, marginTop: 1 }}>{SEV_ICON[fd.sev]} {label}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", lineHeight: 1.4 }}>{fd.msg}</div>
+                            {fd.rec && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 4, lineHeight: 1.45 }}>→ {fd.rec}</div>}
+                            {fd.drpKey && typeof window.drpLabel === "function" && <div style={{ fontSize: 10.5, color: "var(--brand-deep)", marginTop: 4, fontWeight: 600 }}>DRP: {window.drpLabel(fd.drpKey)}</div>}
+                            {ack && <div style={{ fontSize: 11, color: "#15803d", marginTop: 5, fontWeight: 600 }}>✓ รับทราบโดย {ack.by} · {ack.at}</div>}
+                          </div>
+                          {onAck && (
+                            <button type="button"
+                              onClick={() => onAck(fid, ack ? null : { by: (user && user.name) || "เภสัชกร", at: new Date().toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) })}
+                              style={{ flexShrink: 0, border: `1px solid ${ack ? "#16a34a" : sc + "60"}`, background: ack ? "#16a34a" : "var(--surface)", color: ack ? "#fff" : sc, borderRadius: 7, fontSize: 11.5, fontWeight: 700, padding: "4px 9px", cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap", marginTop: 1 }}>
+                              {ack ? "✓ รับทราบแล้ว" : "รับทราบ"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginBottom: 10, paddingTop: 4 }}>
+            ℹ️ ปัญหาที่พบจะถูกบันทึกเป็น DRP โดยอัตโนมัติ (ดู/แก้ไขได้ในส่วน "ประเมินความปลอดภัยด้านยา")
           </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-            <button type="button" onClick={applyAll}
-              style={{ ...ghostBtn, color: sevColor, borderColor: sevColor + "60", fontSize: 13, padding: "8px 14px" }}>
-              นำไปใส่ใน DRP ✓
-            </button>
+          <div style={{ display: "flex", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
             {onCounsel && typeof window.generateCounselingNote === "function" && (
               <button type="button"
                 onClick={() => { const note = window.generateCounselingNote(findings); if (note) onCounsel(note); }}
@@ -2021,72 +2218,7 @@ function RenalDoseCalc({ age, scr, sex, onFill }) {
   );
 }
 
-/* ---------- Feature 6: Lab Sparkline ---------- */
-function LabSparkline({ hn, records, currentEgfr, currentCr }) {
-  const history = React.useMemo(() => {
-    if (!hn || !hn.trim()) return [];
-    return (records || [])
-      .filter(r => r.hn === hn.trim() && r.egfr)
-      .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
-      .slice(-3)
-      .map(r => ({ date: r.date, egfr: parseFloat(r.egfr) }));
-  }, [hn, records]);
-
-  const cur = parseFloat(currentEgfr);
-  const allPts = [...history, ...(cur > 0 ? [{ date: "ปัจจุบัน", egfr: cur, current: true }] : [])];
-
-  if (allPts.length < 2) return null;
-
-  const W = 140, H = 48, PAD = 6;
-  const egfrs = allPts.map(p => p.egfr);
-  const minV = Math.min(...egfrs), maxV = Math.max(...egfrs);
-  const range = maxV - minV || 1;
-
-  const pts = allPts.map((p, i) => ({
-    x: PAD + (i / (allPts.length - 1)) * (W - PAD * 2),
-    y: PAD + (1 - (p.egfr - minV) / range) * (H - PAD * 2),
-    ...p,
-  }));
-
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-
-  // Trend detection
-  const last = egfrs[egfrs.length - 1];
-  const first = egfrs[0];
-  const diff = last - first;
-  const trend = diff < -3 ? "down" : diff > 3 ? "up" : "stable";
-  const trendIcon = trend === "down" ? "↓" : trend === "up" ? "↑" : "→";
-  const trendColor = trend === "down" ? "#dc2626" : trend === "up" ? "#16a34a" : "#64748b";
-
-  return (
-    <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 4, padding: "8px 12px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-2)", display: "flex", alignItems: "center", gap: 6 }}>
-        eGFR Trend
-        <span style={{ fontSize: 14, color: trendColor, fontWeight: 800 }}>{trendIcon}</span>
-        <span style={{ color: trendColor, fontSize: 11 }}>
-          {trend === "down" ? "ลดลง" : trend === "up" ? "ดีขึ้น" : "คงที่"}
-        </span>
-      </div>
-      <svg width={W} height={H} style={{ overflow: "visible" }}>
-        {/* Grid line at eGFR=60 if in range */}
-        {minV < 60 && maxV > 60 && (() => {
-          const gy = PAD + (1 - (60 - minV) / range) * (H - PAD * 2);
-          return <line x1={PAD} y1={gy} x2={W - PAD} y2={gy} stroke="#e2e8f0" strokeWidth={1} strokeDasharray="3,2" />;
-        })()}
-        <polyline points={pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")} fill="none" stroke={trendColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        {pts.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r={p.current ? 4 : 3} fill={p.current ? trendColor : "var(--surface)"} stroke={trendColor} strokeWidth={1.5} />
-            <text x={p.x} y={H - 1} textAnchor="middle" fontSize={8} fill="var(--ink-2)">{p.egfr}</text>
-          </g>
-        ))}
-      </svg>
-      <div style={{ fontSize: 10, color: "var(--ink-2)" }}>
-        {allPts.length} จุด · {allPts.map(p => p.date === "ปัจจุบัน" ? "ปัจจุบัน" : (p.date || "").slice(5)).join(" → ")}
-      </div>
-    </div>
-  );
-}
+/* ---------- LabSparkline moved to lab_trend.jsx (upgraded to multi-series) ---------- */
 
 /* ---------- Feature 4: DRP Summary Card ---------- */
 function DrpSummaryCard({ meds, otcItems, egfr }) {
