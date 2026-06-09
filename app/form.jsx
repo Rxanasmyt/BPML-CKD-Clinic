@@ -403,6 +403,15 @@ function DoseBuilder({ value, onChange }) {
 /* ---------- แบบฟอร์มหลัก ---------- */
 function blankMed() { return { drug: "", strength: "", dose: "", qtyPerDose: "", freqPerDay: "", timing: "", sameAsPrescribed: true, actualQty: "", actualFreq: "", actuallyTaking: "", source: "", remark: "", flags: [] }; }
 
+/* รายชื่อยาที่พบบ่อยตามระยะ CKD (ใช้เป็นตัวช่วยเพิ่มยาเร็ว — ไม่ใช่การสั่งจ่ายอัตโนมัติ)
+   เภสัชกรกดเลือกเองและแก้ไขขนาดได้ทั้งหมด อ้างอิงแนวเวชปฏิบัติ KDIGO + คลินิกไตไทย */
+const STAGE_MED_TEMPLATES = {
+  "3a": ["Losartan", "Dapagliflozin", "Atorvastatin", "Furosemide"],
+  "3b": ["Losartan", "Dapagliflozin", "Atorvastatin", "Furosemide", "Sodium bicarbonate", "Ferrous fumarate"],
+  "4":  ["Losartan", "Dapagliflozin", "Atorvastatin", "Furosemide", "Sodium bicarbonate", "Calcium carbonate", "Ferrous fumarate", "Folic acid", "Alfacalcidol"],
+  "5":  ["Furosemide", "Sodium bicarbonate", "Calcium carbonate", "Sevelamer carbonate", "Calcitriol", "Ferrous fumarate", "Folic acid", "Epoetin alfa (rHuEPO)"],
+};
+
 function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const DRAFT_KEY = "pharm_ckd_form_draft_v1";
 
@@ -417,7 +426,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       hn: "", name: "", age: "", sex: "male", ckdStage: "", date: new Date().toISOString().slice(0,10), scr: "", egfr: "", k: "", na: "",
       hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
       bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
-      meds: [], otcItems: [], otcHerbal: false, otcDetail: "", drps: [], drpFindings: [], drpDetail: "", drpAcks: {}, drpManualKeys: [], drpRemovedKeys: [],
+      meds: [], otcItems: [], otcHerbal: false, otcDetail: "", drps: [], drpFindings: [], drpDetail: "", drpAcks: {}, drpManualKeys: [], drpRemovedKeys: [], drpFollowup: {},
       comparedPrev: false, comparedNew: false, discrepancy: "none", discrepancyType: "",
       interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
       pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
@@ -607,6 +616,18 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     setF((p) => ({ ...p, meds: [...p.meds, { ...blankMed(), drug: d.name, strength: (d.strengths && d.strengths[0]) || "", flags: d.flags || [] }] }));
   };
   const delMed = (i) => setF((p) => ({ ...p, meds: p.meds.filter((_, j) => j !== i) }));
+
+  // Visit template: เพิ่มยาตามชื่อจากเทมเพลต (ถ้ายังไม่มีในรายการ) — เภสัชกรแก้ไขขนาดเองภายหลัง
+  const quickAddByName = (name) => {
+    const info = (typeof lookupDrug === "function") ? lookupDrug(name) : null;
+    setF((p) => {
+      if (p.meds.some((m) => m.drug && m.drug.trim().toLowerCase() === name.toLowerCase())) return p;
+      RecentDrugs.record(name);
+      return { ...p, meds: [...p.meds, { ...blankMed(), drug: name, strength: (info && info.strengths && info.strengths[0]) || "", flags: (info && info.flags) || [] }] };
+    });
+  };
+  const stageKey = (f.ckdStage || "").toLowerCase().replace(/[^0-9ab]/g, "");
+  const templateDrugs = STAGE_MED_TEMPLATES[stageKey] || [];
 
   // Feature 1: allergy conflicts per med row
   const allergyConflicts = React.useMemo(() =>
@@ -1137,6 +1158,27 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <MedSearchAdd onAdd={addDrugFromSearch} onAddBlank={addMed}
             existing={f.meds.map((m) => m.drug)} />
 
+          {/* Visit template — เพิ่มยาที่พบบ่อยตามระยะ CKD อย่างรวดเร็ว (เภสัชกรแก้ไขขนาดเอง) */}
+          {templateDrugs.length > 0 && (
+            <div style={{ marginTop: 10, padding: "11px 14px", background: "var(--surface-2)", border: "1px dashed var(--border)", borderRadius: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8, fontSize: 12.5, fontWeight: 700, color: "var(--brand-deep)" }}>
+                <span>⚡</span> เพิ่มเร็ว — ยาที่พบบ่อยใน CKD {f.ckdStage}
+                <span style={{ fontWeight: 400, color: "var(--ink-2)", fontSize: 11.5 }}>(กดเพื่อเพิ่ม แล้วปรับขนาดเอง)</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                {templateDrugs.map((name) => {
+                  const added = f.meds.some((m) => m.drug && m.drug.trim().toLowerCase() === name.toLowerCase());
+                  return (
+                    <button key={name} type="button" disabled={added} onClick={() => quickAddByName(name)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, border: `1px solid ${added ? "var(--border)" : "var(--brand)"}`, background: added ? "var(--surface-2)" : "var(--surface)", color: added ? "var(--ink-2)" : "var(--brand-deep)", fontSize: 12.5, fontWeight: 600, cursor: added ? "default" : "pointer", fontFamily: "var(--sans)", opacity: added ? 0.6 : 1 }}>
+                      {added ? "✓" : "+"} {name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Feature 1: DDI Alerts */}
           {React.useMemo(() => {
             const drugList = f.meds.filter(m => m.drug && m.drug.trim()).map(m => ({ name: m.drug }));
@@ -1204,6 +1246,48 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 10, lineHeight: 1.5 }}>
             รายการ DRP มาจากการวิเคราะห์อัตโนมัติ (ป้าย <span style={{ fontSize: 9.5, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: "var(--brand)", color: "#fff", verticalAlign: "middle" }}>AUTO</span>) — เภสัชกรเพิ่ม/เอาออกได้เอง
           </div>
+          {/* Feature: DRP outcome loop — ติดตามผล DRP จาก visit ก่อนหน้า */}
+          {(() => {
+            const prevDrps = (prevVisits[0] && Array.isArray(prevVisits[0].drps)) ? prevVisits[0].drps : [];
+            if (!prevDrps.length) return null;
+            const STATUS = [
+              { v: "resolved", t: "แก้ไขแล้ว", color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+              { v: "ongoing", t: "ยังมีอยู่", color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+              { v: "worsened", t: "แย่ลง", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+            ];
+            const setOutcome = (key, v) => setF((p) => ({ ...p, drpFollowup: { ...(p.drpFollowup || {}), [key]: v } }));
+            return (
+              <div style={{ marginBottom: 16, padding: "13px 15px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>
+                  🔄 ติดตามผล DRP จาก visit ก่อน ({fmtDate(prevVisits[0].date)})
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginBottom: 10 }}>ระบุสถานะของปัญหาที่พบครั้งก่อน เพื่อปิด loop การดูแล</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {prevDrps.map((key) => {
+                    const label = (typeof window.drpLabel === "function") ? window.drpLabel(key) : key;
+                    const cur = (f.drpFollowup || {})[key];
+                    return (
+                      <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ flex: 1, minWidth: 160, fontSize: 12.5, color: "var(--ink)" }}>{label}</span>
+                        <div style={{ display: "flex", gap: 5 }}>
+                          {STATUS.map((s) => (
+                            <button key={s.v} type="button" onClick={() => setOutcome(key, s.v)}
+                              style={{ padding: "5px 11px", borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)",
+                                border: `1.5px solid ${cur === s.v ? s.color : "var(--border)"}`,
+                                background: cur === s.v ? s.bg : "var(--surface)",
+                                color: cur === s.v ? s.color : "var(--ink-2)" }}>
+                              {s.t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           <DrpChipSelector autoKeys={autoDrpKeys} selectedKeys={finalDrpKeys} onToggle={toggleDrpKey} />
           {finalDrpKeys.length > 0 && (
             <Field label="รายละเอียดปัญหาด้านยา (DRP)" style={{ marginTop: 14 }}>
