@@ -210,6 +210,27 @@
     .ptbl-head { display: none !important; }
     .pinfo-row { grid-template-columns: 1fr 1fr !important; }
   }
+
+  /* ── Keyboard focus ring (เห็นชัดเมื่อใช้ Tab/keyboard, ซ่อนเมื่อคลิกเมาส์) ── */
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button:focus:not(:focus-visible),
+  input:focus:not(:focus-visible),
+  select:focus:not(:focus-visible),
+  a:focus:not(:focus-visible) { outline: none; }
+
+  /* ── เคารพ prefers-reduced-motion: ปิด animation ให้ผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว ── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 </style>
 </head>
 <body>

@@ -127,6 +127,47 @@ function App() {
 
   const [dataReady, setDataReady] = React.useState(false);
 
+  /* --- Global keyboard shortcuts ---
+     "/"           → โฟกัสช่องค้นหา
+     "g" then "n"  → ไปหน้าบันทึกใหม่ (chord)
+     Esc           → ปิด overlay / blur
+     (Ctrl+S ในฟอร์มจัดการเองภายใน BpmlForm) */
+  React.useEffect(() => {
+    let chordTimer = null, awaitingG = false;
+    function inField(el) {
+      const tag = (el && el.tagName) || "";
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable);
+    }
+    function onKey(e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const editing = inField(document.activeElement);
+      // "/" focus search (เฉพาะตอนไม่ได้พิมพ์ในช่องอื่น)
+      if (e.key === "/" && !editing) {
+        const el = document.getElementById("global-search-input");
+        if (el) { e.preventDefault(); el.focus(); }
+        return;
+      }
+      // chord: g → n  = บันทึกใหม่
+      if (!editing && e.key.toLowerCase() === "g") {
+        awaitingG = true;
+        clearTimeout(chordTimer);
+        chordTimer = setTimeout(() => { awaitingG = false; }, 800);
+        return;
+      }
+      if (awaitingG && !editing) {
+        awaitingG = false;
+        clearTimeout(chordTimer);
+        const k = e.key.toLowerCase();
+        if (k === "n") { e.preventDefault(); setRoute({ view: "form" }); }
+        else if (k === "p") { e.preventDefault(); setRoute({ view: "patients" }); }
+        else if (k === "d") { e.preventDefault(); setRoute({ view: "dashboard" }); }
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); clearTimeout(chordTimer); };
+  }, []);
+
   /* --- Firebase realtime listener --- */
   React.useEffect(() => {
     let unsub = null;
@@ -346,7 +387,9 @@ function App() {
             </div>
           </div>
         ) : (
-          <div key={route.view+(route.hn||'')} className="page-enter">{page}</div>
+          <div key={route.view+(route.hn||'')} className="page-enter">
+            <PageErrorBoundary resetKey={route.view+(route.hn||'')}>{page}</PageErrorBoundary>
+          </div>
         )}
       </main>
 
@@ -576,9 +619,10 @@ function TopBar({ syncState, dueFollow, user, onOpenPatient, records = [], onNav
       <div style={{ position: "relative", flex: "0 1 280px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", border: `1.5px solid ${searchFocus ? "var(--brand)" : "var(--border)"}`, borderRadius: 11, background: "var(--surface-2)", transition: "border-color 0.2s, box-shadow 0.2s", boxShadow: searchFocus ? "0 0 0 3px color-mix(in srgb,var(--brand) 16%,transparent)" : "none" }}>
           <Icon name="search" size={15} color="var(--ink-2)" />
-          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
+          <input id="global-search-input" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
             onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => { setSearchFocus(false); setSearchQ(""); }, 200)}
-            placeholder="ค้นหาผู้ป่วย (ชื่อ/HN)…"
+            onKeyDown={(e) => { if (e.key === "Escape") { setSearchQ(""); e.currentTarget.blur(); } }}
+            placeholder="ค้นหาผู้ป่วย (ชื่อ/HN)… กด /"
             style={{ border: "none", background: "none", outline: "none", fontSize: 13, color: "var(--ink)", fontFamily: "var(--sans)", width: "100%", minWidth: 0 }} />
           {searchQ && <button onClick={() => setSearchQ("")} style={{ border:"none", background:"none", cursor:"pointer", padding:0, flexShrink:0, display:"grid", placeItems:"center" }}><Icon name="x" size={13} color="var(--ink-2)" /></button>}
         </div>
@@ -631,6 +675,42 @@ function TopBar({ syncState, dueFollow, user, onOpenPatient, records = [], onNav
       </div>
     </div>
   );
+}
+
+/* --- Per-page Error Boundary: ถ้าหน้าใดพัง nav/sidebar ยังอยู่ กดไปหน้าอื่นต่อได้ ---
+   reset อัตโนมัติเมื่อ resetKey เปลี่ยน (เปลี่ยน route แล้ว error เคลียร์เอง) */
+class PageErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Page crashed:", error, info); }
+  componentDidUpdate(prev) {
+    if (prev.resetKey !== this.props.resetKey && this.state.error) this.setState({ error: null });
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: "clamp(24px,5vw,60px)", maxWidth: 560, margin: "0 auto", textAlign: "center", fontFamily: "var(--sans)" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>😵</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--ink)", marginBottom: 8 }}>หน้านี้แสดงผลไม่สำเร็จ</div>
+          <div style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: 6 }}>ข้อมูลของคุณยังปลอดภัย — ลองกดไปหน้าอื่นหรือโหลดหน้านี้ใหม่</div>
+          <div style={{ fontSize: 12, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", margin: "14px auto", maxWidth: 480, wordBreak: "break-word", fontFamily: "var(--mono)" }}>
+            {String(this.state.error && this.state.error.message || this.state.error)}
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <button onClick={() => this.setState({ error: null })}
+              style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--ink)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              ลองอีกครั้ง
+            </button>
+            <button onClick={() => window.location.reload()}
+              style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: "var(--brand)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              โหลดใหม่
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* --- Error Boundary: กัน white screen เวลา render error --- */

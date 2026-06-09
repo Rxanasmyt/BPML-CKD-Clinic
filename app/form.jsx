@@ -718,6 +718,41 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   }
   const valid = f.hn.trim() && f.name.trim() && f.ckdStage;
 
+  // มีการแก้ไขที่ยังไม่บันทึก (เริ่มนับหลัง interaction แรก, รีเซ็ตเมื่อ save/clear)
+  const [dirty, setDirty] = React.useState(false);
+  const firstRender = React.useRef(true);
+  React.useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    if (!saved) setDirty(true);
+  }, [f]);
+
+  // เตือนก่อนปิด/รีเฟรชแท็บถ้ายังมีข้อมูลที่ยังไม่บันทึก
+  React.useEffect(() => {
+    function onBeforeUnload(e) {
+      if (dirty && !saved) { e.preventDefault(); e.returnValue = ""; return ""; }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty, saved]);
+
+  // Ctrl/Cmd+S → บันทึก (ถ้าข้อมูลครบ)
+  React.useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (valid && !saving) save();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [valid, saving, unackedHighFindings.length]);
+
+  // ยกเลิกแบบมี guard: ถ้ามีข้อมูลที่ยังไม่บันทึกให้ยืนยันก่อน
+  function handleCancel() {
+    if (dirty && !saved && !window.confirm("ยังมีข้อมูลที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?")) return;
+    onCancel && onCancel();
+  }
+
   return (
     <div style={{ paddingBottom: 96 }}>
 
@@ -799,7 +834,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         <PageHead
           title={initial ? "แก้ไขแบบบันทึก BPML" : "แบบบันทึก BPML ใหม่"}
           sub="Best Possible Medication List & Medication Reconciliation"
-          action={<button onClick={onCancel} style={ghostBtn}><Icon name="x" size={16} />ยกเลิก</button>}
+          action={<button onClick={handleCancel} style={ghostBtn}><Icon name="x" size={16} />ยกเลิก</button>}
         />
 
         {/* Draft autosave indicator */}
@@ -1293,7 +1328,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
             }}>
             {saving
               ? <><span style={{ width:16,height:16,border:"2px solid rgba(255,255,255,.4)",borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",animation:"spin .6s linear infinite" }} />กำลังบันทึก...</>
-              : <><Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล</>}
+              : <><Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล <span style={{ fontSize: 10.5, opacity: .8, fontWeight: 500, marginLeft: 2 }}>⌘/Ctrl+S</span></>}
           </button>
         </div>
         {!valid && <div style={{ maxWidth: 1080, margin: "6px auto 0", fontSize: 11.5, color: "#b45309" }}>กรอก HN, ชื่อ-สกุล และเลือก CKD stage เพื่อบันทึก</div>}
