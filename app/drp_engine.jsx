@@ -447,7 +447,7 @@ const EGFR_RULES = [
 ];
 
 /* ---------- ฟังก์ชันวิเคราะห์หลัก ---------- */
-function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm: hasDM, age, followUp, allergy }) {
+function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, phos, ca, bpSys, bpDia, uacr, dm: hasDM, age, followUp, allergy, prevEgfr, prevEgfrDays }) {
   const allDrugs = [
     ...meds.map((m) => ({ name: m.drug, source: "med" })),
     ...otcItems.map((o) => ({ name: o.name, source: "otc" })),
@@ -516,13 +516,19 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, ph
     // ตรวจขนาดสั่งเกิน max
     if (maxInfo && maxInfo.max > 0 && !isNaN(presc) && presc > maxInfo.max + 0.001) {
       const overByEgfr = maxInfo.renal;
+      // Renal dose calculator: เสนอ regimen ที่ใช้จริงตามเม็ดยาที่มี
+      const regimen = (typeof suggestDoseRegimen === "function")
+        ? suggestDoseRegimen(m.drug, maxInfo.max, maxInfo.unit) : null;
+      const ceilTxt = `≤${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน`;
+      const suggestTxt = regimen ? ` → แนะนำ ${regimen}` : "";
       addFinding({
         sev: overByEgfr ? SEV.HIGH : SEV.MED,
         msg: `⚠️ ${m.drug} ${m.strength || ""} ขนาดรวม ${fmtDose(presc)} ${maxInfo.unit}/วัน เกินขนาดสูงสุด${overByEgfr ? ` ที่ปรับตาม eGFR=${egfr}` : ""} (${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน)`,
         rec: overByEgfr
-          ? `ลดขนาดยาให้ ≤${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน ตามการทำงานของไต หรือปรึกษาแพทย์`
-          : `ทบทวนขนาดยา; ลดให้ ≤${fmtDose(maxInfo.max)} ${maxInfo.unit}/วัน`,
+          ? `ลดขนาดยาให้ ${ceilTxt} ตามการทำงานของไต หรือปรึกษาแพทย์${suggestTxt}`
+          : `ทบทวนขนาดยา; ลดให้ ${ceilTxt}${suggestTxt}`,
         drpKey: DRPK.overdose, drugs: [m.drug], id: "overdose_rx_" + m.drug,
+        suggestedRegimen: regimen || null, maxDaily: maxInfo.max, doseUnit: maxInfo.unit,
       });
     }
 
@@ -635,6 +641,32 @@ function analyzeDRPs({ meds = [], otcItems = [], egfr, k, ckdStage, hb, hco3, ph
       msg:`⚠️ K⁺=${k} mmol/L (>5.5) ร่วมกับยาเพิ่มโพแทสเซียม (ACEI/ARB/K-sparing) — hyperkalemia เสี่ยงสูง`,
       rec:"ทบทวน/หยุดยาที่เพิ่ม K⁺; พิจารณา K-binder; ตรวจ ECG; ติดตาม K⁺ ใกล้ชิด; ปรึกษาแพทย์ด่วน",
       drpKey:DRPK.electrolyte, drugs:[], id:"lab_hyperk" });
+  } else if (!isNaN(kVal) && kVal >= 6.0) {
+    // Severe hyperkalemia เป็นภาวะฉุกเฉินไม่ว่าจะมียาเพิ่ม K หรือไม่
+    addFinding({ sev:SEV.HIGH,
+      msg:`🚨 K⁺=${k} mmol/L (≥6.0) — severe hyperkalemia ภาวะฉุกเฉิน เสี่ยงหัวใจเต้นผิดจังหวะ`,
+      rec:"ตรวจ ECG ทันที; เริ่ม emergency management (Ca gluconate, insulin+glucose, K-binder); ปรึกษาแพทย์ด่วน",
+      drpKey:DRPK.electrolyte, drugs:[], id:"lab_hyperk_severe" });
+  } else if (!isNaN(kVal) && kVal > 5.5) {
+    // K สูงโดยไม่มียาเพิ่ม K — ยังต้องติดตาม
+    addFinding({ sev:SEV.MED,
+      msg:`K⁺=${k} mmol/L (>5.5) — hyperkalemia ต้องติดตาม`,
+      rec:"ทบทวนอาหาร/ยาที่อาจเพิ่ม K⁺; พิจารณา K-binder; ตรวจ ECG ถ้า K⁺ สูงขึ้น; นัดติดตาม K⁺",
+      drpKey:DRPK.electrolyte, drugs:[], id:"lab_hyperk_noned" });
+  }
+
+  // eGFR ลดเร็ว: เทียบ visit ก่อนหน้า ลดลง >25% (หรือ >5 mL/min/ปี) — rapid CKD progression
+  const egPrev = parseFloat(prevEgfr), egNow = parseFloat(egfr);
+  if (!isNaN(egPrev) && egPrev > 0 && !isNaN(egNow) && egNow > 0 && egNow < egPrev) {
+    const dropPct = ((egPrev - egNow) / egPrev) * 100;
+    const days = parseFloat(prevEgfrDays);
+    const withinWindow = isNaN(days) || days <= 120; // ภายใน ~4 เดือน
+    if (dropPct >= 25 && withinWindow) {
+      addFinding({ sev: dropPct >= 40 ? SEV.HIGH : SEV.MED,
+        msg:`⚠️ eGFR ลดลงเร็ว ${egPrev}→${egNow} mL/min (ลด ${dropPct.toFixed(0)}%${isNaN(days)?"":` ใน ${days} วัน`}) — rapid CKD progression / สงสัย AKI`,
+        rec:"ประเมินสาเหตุ (dehydration, ยา nephrotoxic, NSAIDs, contrast, obstruction); ทบทวนยาที่ขับทางไต; ปรึกษาแพทย์",
+        drpKey:DRPK.nephrotoxic, drugs:[], id:"lab_egfr_decline" });
+    }
   }
   // Metabolic acidosis: HCO3 < 22 และไม่มี alkali
   if (!isNaN(hco3V) && hco3V < 22 && !hasBicarb()) {

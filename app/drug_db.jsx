@@ -799,4 +799,37 @@ function maxDailyDoseFor(name, egfr) {
   return null;
 }
 
-Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug, DRUG_DOSING, maxDailyDoseFor, DRUG_ALIASES, searchDrugs });
+// suggestDoseRegimen(name, maxDaily, unit) → ข้อความขนาดยาที่ใช้จริงตามเม็ดที่มี
+// เช่น Metformin maxDaily=1000 → "500 mg วันละ 2 ครั้ง (รวม 1000 mg/วัน)"
+// คืน null ถ้าไม่มีข้อมูลความแรง หรือ maxDaily<=0
+function suggestDoseRegimen(name, maxDaily, unit) {
+  if (!maxDaily || maxDaily <= 0) return null;
+  const info = lookupDrug(name);
+  if (!info || !Array.isArray(info.strengths) || !info.strengths.length) return null;
+  // ดึงตัวเลขความแรง (mg/mcg) จากสตริง เช่น "500 mg" → 500 ; ข้ามรูปแบบ IU/IV/SR-only ที่ parse ไม่ได้
+  const strengths = info.strengths
+    .map((s) => { const m = String(s).match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : NaN; })
+    .filter((n) => !isNaN(n) && n > 0)
+    .sort((a, b) => b - a);
+  if (!strengths.length) return null;
+  const FREQ_LABEL = { 1: "วันละ 1 ครั้ง", 2: "วันละ 2 ครั้ง", 3: "วันละ 3 ครั้ง", 4: "วันละ 4 ครั้ง" };
+  let best = null;
+  // หา regimen ที่ให้ขนาดรวม ≤ maxDaily และใกล้ maxDaily ที่สุด (ใช้เม็ดมาตรฐาน, ความถี่/จำนวนเม็ดน้อยที่สุด)
+  for (const st of strengths) {
+    for (let freq = 1; freq <= 3; freq++) {
+      for (let qty = 1; qty <= 2; qty++) {
+        const total = st * qty * freq;
+        if (total > maxDaily + 0.001) continue;
+        const score = total - (freq * 0.01) - (qty * 0.005); // ชอบขนาดรวมสูง แต่ความถี่/เม็ดน้อย
+        if (!best || score > best.score) best = { st, freq, qty, total, score };
+      }
+    }
+  }
+  if (!best) return null;
+  const u = unit || "mg";
+  const qtyTxt = best.qty > 1 ? ` (ครั้งละ ${best.qty} เม็ด)` : "";
+  return `${fmtN(best.st)} ${u} ${FREQ_LABEL[best.freq]}${qtyTxt} — รวม ${fmtN(best.total)} ${u}/วัน`;
+}
+function fmtN(n) { return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""); }
+
+Object.assign(window, { DRUG_DB, FLAG_LABEL, lookupDrug, DRUG_DOSING, maxDailyDoseFor, suggestDoseRegimen, DRUG_ALIASES, searchDrugs });

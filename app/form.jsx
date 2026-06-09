@@ -627,14 +627,23 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const drpFindings = React.useMemo(() => {
     try {
       if (typeof window.analyzeDRPs !== "function") return [];
+      // visit ก่อนหน้าที่มี eGFR (สำหรับตรวจ eGFR ลดเร็ว)
+      const prevWithEgfr = prevVisits.find((r) => r.egfr && parseFloat(r.egfr) > 0);
+      let prevEgfr = null, prevEgfrDays = null;
+      if (prevWithEgfr && f.date && prevWithEgfr.date) {
+        prevEgfr = parseFloat(prevWithEgfr.egfr);
+        const d1 = new Date(prevWithEgfr.date), d2 = new Date(f.date);
+        if (!isNaN(d1) && !isNaN(d2)) prevEgfrDays = Math.round((d2 - d1) / 86400000);
+      }
       const res = window.analyzeDRPs({
         meds: f.meds, otcItems: f.otcItems || [], egfr: f.egfr, k: f.k, ckdStage: f.ckdStage,
         hb: f.hb, hco3: f.hco3, phos: f.phos, ca: f.ca, bpSys: f.bpSys, bpDia: f.bpDia,
         uacr: f.uacr, dm: f.dm, age: f.age, followUp: f.followUp, allergy: f.allergy,
+        prevEgfr, prevEgfrDays,
       });
       return (res && Array.isArray(res.findings)) ? res.findings : [];
     } catch (e) { return []; }
-  }, [f.meds, f.otcItems, f.egfr, f.k, f.ckdStage, f.hb, f.hco3, f.phos, f.ca, f.bpSys, f.bpDia, f.uacr, f.dm, f.age, f.followUp, f.allergy]);
+  }, [f.meds, f.otcItems, f.egfr, f.k, f.ckdStage, f.hb, f.hco3, f.phos, f.ca, f.bpSys, f.bpDia, f.uacr, f.dm, f.age, f.followUp, f.allergy, f.date, prevVisits]);
 
   const autoDrpKeys = React.useMemo(() =>
     (typeof window.summarizeDrpKeys === "function") ? window.summarizeDrpKeys(drpFindings) : [],
