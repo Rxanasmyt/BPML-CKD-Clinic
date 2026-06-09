@@ -621,6 +621,7 @@ const ghostBtn = { display: "inline-flex", alignItems: "center", gap: 7, padding
 /* ---------- Print / PDF Modal ---------- */
 function PrintModal({ rec, patient, onClose }) {
   const risk = computeRisk(rec);
+  const [mode, setMode] = React.useState("clinical"); // clinical | patient
   const autoFindings = React.useMemo(() => {
     try {
       if (typeof window.analyzeDRPs !== "function") return [];
@@ -654,8 +655,11 @@ function PrintModal({ rec, patient, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 900, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "24px 16px" }}>
       <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 780, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
         {/* Modal header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #e5e7eb", background: "#f9fafb" }}>
-          <span style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>ตัวอย่างก่อนพิมพ์ / PDF Export</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", gap: 6, background: "#e5e7eb", borderRadius: 9, padding: 3 }}>
+            <button onClick={() => setMode("clinical")} style={{ padding: "7px 14px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "var(--sans)", background: mode === "clinical" ? "#fff" : "transparent", color: mode === "clinical" ? "#0f766e" : "#6b7280", boxShadow: mode === "clinical" ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>📋 สำหรับแพทย์/เวชระเบียน</button>
+            <button onClick={() => setMode("patient")} style={{ padding: "7px 14px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "var(--sans)", background: mode === "patient" ? "#fff" : "transparent", color: mode === "patient" ? "#0f766e" : "#6b7280", boxShadow: mode === "patient" ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>👤 เอกสารยาผู้ป่วย</button>
+          </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={doPrint} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 18px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
               <Icon name="download" size={16} color="#fff" />พิมพ์ / บันทึก PDF
@@ -666,6 +670,7 @@ function PrintModal({ rec, patient, onClose }) {
 
         {/* Printable area */}
         <div id="ckd-print-area" style={{ padding: "28px 32px", fontFamily: "sans-serif", color: "#111" }}>
+          {mode === "patient" ? <PatientMedHandout rec={rec} patient={patient} /> : (<>
           {/* Letterhead */}
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, borderBottom: "3px solid #0d9488", paddingBottom: 14 }}>
             <div style={{ width: 48, height: 48, borderRadius: 10, background: "#0d9488", display: "grid", placeItems: "center" }}>
@@ -791,7 +796,109 @@ function PrintModal({ rec, patient, onClose }) {
             <span>PHARM-CKD System · BPML CKD Clinic</span>
             <span>พิมพ์โดย: {rec.pharmacist || "–"} · {fmtDate(rec.date)}</span>
           </div>
+          </>)}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   PatientMedHandout — เอกสารยาสำหรับผู้ป่วย (ภาษาไทย เข้าใจง่าย ตัวอักษรใหญ่)
+   รายการยา + วิธีกิน + สิ่งที่ต้องระวัง + คำแนะนำดูแลไต + วันนัด
+   ========================================================================= */
+function FREQ_THAI(m) {
+  // แปลความถี่เป็นภาษาง่าย ๆ
+  const f = parseInt(m.freqPerDay) || 0;
+  const q = parseInt(m.qtyPerDose) || 0;
+  const map = { 1: "วันละ 1 ครั้ง", 2: "วันละ 2 ครั้ง (เช้า-เย็น)", 3: "วันละ 3 ครั้ง (เช้า-กลางวัน-เย็น)", 4: "วันละ 4 ครั้ง" };
+  const freqTxt = map[f] || (m.dose || "ตามแพทย์สั่ง");
+  const qtyTxt = q ? `ครั้งละ ${q} เม็ด ` : "";
+  return `${qtyTxt}${freqTxt}`;
+}
+function PatientMedHandout({ rec, patient }) {
+  const meds = (rec.meds || []).filter((m) => m.drug && m.drug.trim());
+  // คำเตือนเฉพาะยาจากฐานข้อมูล (flags) — แปลเป็นคำง่าย ๆ
+  const warnFor = (drug) => {
+    const info = (typeof lookupDrug === "function") ? lookupDrug(drug) : null;
+    const flags = (info && info.flags) || [];
+    const w = [];
+    if (flags.includes("nephrotoxic")) w.push("⚠️ ยาที่ต้องระวังเรื่องไต — ห้ามปรับขนาดเอง");
+    if (flags.includes("renal")) w.push("ขนาดยาปรับตามค่าไต — กินตามที่แพทย์สั่งเท่านั้น");
+    if (flags.includes("k")) w.push("อาจทำให้โพแทสเซียมสูง — เลี่ยงอาหารโพแทสเซียมสูงตามคำแนะนำ");
+    return w;
+  };
+  const hb = { width: "100%", borderCollapse: "collapse", fontSize: 15, marginBottom: 18 };
+  const hth = { padding: "10px 12px", background: "#0d9488", color: "#fff", textAlign: "left", fontWeight: 700, fontSize: 14 };
+  const htd = { padding: "11px 12px", borderBottom: "1px solid #d1d5db", verticalAlign: "top", lineHeight: 1.5 };
+  return (
+    <div style={{ fontFamily: "sans-serif", color: "#111" }}>
+      {/* หัวกระดาษ */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18, borderBottom: "3px solid #0d9488", paddingBottom: 14 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 10, background: "#0d9488", display: "grid", placeItems: "center" }}>
+          <span style={{ color: "#fff", fontWeight: 900, fontSize: 18 }}>RX</span>
+        </div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#0f766e" }}>รายการยาของคุณ</div>
+          <div style={{ fontSize: 14, color: "#6b7280" }}>คลินิกโรคไต BPML · วันที่ {fmtDate(rec.date)}</div>
+        </div>
+      </div>
+
+      {/* ชื่อผู้ป่วย */}
+      <div style={{ fontSize: 17, marginBottom: 6 }}><strong>{patient.name}</strong> &nbsp;<span style={{ color: "#6b7280", fontSize: 14 }}>HN {patient.hn} · อายุ {patient.age} ปี</span></div>
+      {rec.allergy && rec.allergy !== "-" && (
+        <div style={{ background: "#fef2f2", border: "2px solid #fca5a5", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 15, color: "#b91c1c", fontWeight: 700 }}>
+          🚫 ประวัติแพ้ยา: {rec.allergy} — แจ้งทุกครั้งที่พบแพทย์/เภสัชกร
+        </div>
+      )}
+
+      {/* ตารางยา */}
+      <table style={hb}>
+        <thead><tr>
+          <th style={{ ...hth, width: 36, textAlign: "center" }}>#</th>
+          <th style={hth}>ชื่อยา</th>
+          <th style={hth}>วิธีกิน</th>
+        </tr></thead>
+        <tbody>
+          {meds.length ? meds.map((m, i) => {
+            const warns = warnFor(m.drug);
+            return (
+              <tr key={i}>
+                <td style={{ ...htd, textAlign: "center", color: "#9ca3af", fontWeight: 700 }}>{i + 1}</td>
+                <td style={htd}><strong style={{ fontSize: 16 }}>{m.drug}</strong>{m.strength ? <span style={{ color: "#374151" }}> {m.strength}</span> : ""}</td>
+                <td style={htd}>
+                  <span style={{ fontSize: 15 }}>{FREQ_THAI(m)}</span>
+                  {m.remark ? <div style={{ color: "#6b7280", fontSize: 13.5, marginTop: 2 }}>{m.remark}</div> : null}
+                  {warns.map((w, j) => <div key={j} style={{ color: "#b45309", fontSize: 13, marginTop: 3 }}>{w}</div>)}
+                </td>
+              </tr>
+            );
+          }) : <tr><td colSpan={3} style={{ ...htd, textAlign: "center", color: "#9ca3af" }}>ไม่มีรายการยา</td></tr>}
+        </tbody>
+      </table>
+
+      {/* คำแนะนำดูแลไต */}
+      <div style={{ background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: "#0f766e", marginBottom: 8 }}>ข้อควรปฏิบัติเพื่อดูแลไต</div>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.7, color: "#134e4a" }}>
+          <li>กินยาให้ครบ ตรงเวลา ทุกวัน อย่าหยุดยาเองโดยไม่ปรึกษาแพทย์</li>
+          <li>หลีกเลี่ยงยาแก้ปวดกลุ่ม NSAID (เช่น ibuprofen, diclofenac) และยาชุด ยาสมุนไพรที่ไม่ทราบส่วนผสม</li>
+          <li>ควบคุมความดันโลหิตและน้ำตาลตามเป้าหมาย ลดอาหารเค็ม</li>
+          <li>ดื่มน้ำตามที่แพทย์แนะนำ และมาตรวจตามนัดทุกครั้ง</li>
+          <li>หากมีอาการบวม เหนื่อย ปัสสาวะน้อยลง หรือผิดปกติ ให้รีบพบแพทย์</li>
+        </ul>
+      </div>
+
+      {/* วันนัด */}
+      {rec.followUp && rec.followUp.due && (
+        <div style={{ background: "#fffbeb", border: "2px solid #fcd34d", borderRadius: 12, padding: "14px 18px", marginBottom: 16, fontSize: 16 }}>
+          <strong style={{ color: "#92400e" }}>📅 นัดครั้งถัดไป: {fmtDate(rec.followUp.due)}</strong>
+          {rec.followUp.note && <div style={{ color: "#92400e", marginTop: 4, fontSize: 14 }}>{rec.followUp.note}</div>}
+        </div>
+      )}
+
+      <div style={{ marginTop: 18, borderTop: "1px solid #e5e7eb", paddingTop: 12, fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
+        เอกสารนี้จัดทำโดยเภสัชกร {rec.pharmacist || ""} · คลินิกโรคไต BPML · หากมีข้อสงสัยเรื่องยา โปรดสอบถามเภสัชกร
       </div>
     </div>
   );
