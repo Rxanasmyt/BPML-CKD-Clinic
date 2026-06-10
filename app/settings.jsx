@@ -5,8 +5,8 @@
 /* ---------- Modal กรอบ ---------- */
 function Modal({ title, onClose, children }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.38)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 420, boxShadow: "0 24px 60px rgba(0,0,0,.2)" }}>
+    <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.38)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="modal-card" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 420, boxShadow: "0 24px 60px rgba(0,0,0,.2)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)", margin: 0 }}>{title}</h3>
           <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><Icon name="x" size={20} color="var(--ink-2)" /></button>

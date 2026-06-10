@@ -408,7 +408,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
             <div style={{ width: 4, height: 28, borderRadius: 2,
               background: "linear-gradient(180deg,var(--brand),var(--brand-deep))",
               boxShadow: "0 2px 8px rgba(13,148,136,.5)" }} />
-            <h1 style={{ fontSize: "clamp(22px,2.4vw,30px)", fontWeight: 800, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
+            <h1 className="head-underline" style={{ fontSize: "clamp(22px,2.4vw,30px)", fontWeight: 800, color: "var(--ink)", margin: 0, lineHeight: 1.2 }}>
               ภาพรวมคลินิก CKD
             </h1>
           </div>
@@ -595,9 +595,9 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
                 { label:"ยังมีอยู่",   n:_drpOngoing,  color:"#d97706", bg:"#fffbeb" },
                 { label:"แย่ลง",      n:_drpWorsened, color:"#dc2626", bg:"#fef2f2" },
                 { label:"รอติดตาม",   n:_drpPending,  color:"#6b7280", bg:"var(--surface-2)" },
-              ].map(({ label, n, color, bg }) => (
-                <div key={label} style={{ padding:"10px 14px", background:bg, borderRadius:12,
-                  border:`1px solid ${color}22`, minWidth:80, textAlign:"center" }}>
+              ].map(({ label, n, color, bg }, ci) => (
+                <div key={label} className="chip-pop" style={{ padding:"10px 14px", background:bg, borderRadius:12,
+                  border:`1px solid ${color}22`, minWidth:80, textAlign:"center", animationDelay:`${ci*0.07}s` }}>
                   <div style={{ fontFamily:"var(--mono)", fontSize:26, fontWeight:800, color, lineHeight:1 }}>{n}</div>
                   <div style={{ fontSize:11, color, fontWeight:600, marginTop:3 }}>{label}</div>
                 </div>

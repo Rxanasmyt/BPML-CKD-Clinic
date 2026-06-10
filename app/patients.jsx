@@ -8,8 +8,8 @@ function ConfirmDeleteModal({ rec, onConfirm, onCancel }) {
   const [confirm, setConfirm] = React.useState("");
   const canDelete = confirm.trim() === "ลบ";
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:18, padding:"28px 28px 24px", width:"100%", maxWidth:440, boxShadow:"0 24px 60px rgba(0,0,0,.25)" }}>
+    <div className="modal-overlay" style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div className="modal-card" style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:18, padding:"28px 28px 24px", width:"100%", maxWidth:440, boxShadow:"0 24px 60px rgba(0,0,0,.25)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:18 }}>
           <div style={{ width:44, height:44, borderRadius:12, background:"#fef2f2", display:"grid", placeItems:"center", flexShrink:0 }}>
             <Icon name="alert" size={22} color="#dc2626" />
@@ -652,8 +652,8 @@ function PrintModal({ rec, patient, onClose }) {
   const ptdKey = { ...ptd, color: "#6b7280", width: 160, fontWeight: 600 };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 900, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "24px 16px" }}>
-      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 780, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
+    <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 900, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "24px 16px" }}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 780, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
         {/* Modal header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", gap: 6, background: "#e5e7eb", borderRadius: 9, padding: 3 }}>
@@ -958,9 +958,9 @@ function LineReminderModal({ rec, patient, onClose }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}
+    <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 500, boxShadow: "0 24px 60px rgba(0,0,0,.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+      <div className="modal-card" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 500, boxShadow: "0 24px 60px rgba(0,0,0,.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", flexShrink: 0 }}>
           <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dcfce7", display: "grid", placeItems: "center", flexShrink: 0 }}>
@@ -1072,8 +1072,8 @@ DRP ที่พบ: ${drpText}
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}>
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 560, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
+    <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}>
+      <div className="modal-card" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 560, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
         {/* Modal header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

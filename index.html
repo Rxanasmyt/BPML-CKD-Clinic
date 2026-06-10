@@ -222,6 +222,86 @@
   select:focus:not(:focus-visible),
   a:focus:not(:focus-visible) { outline: none; }
 
+  /* ═══════════════════════════════════════════════════════════
+     ✦ POLISH LAYER — micro-interactions ทั่วทั้งระบบ
+     ═══════════════════════════════════════════════════════════ */
+
+  /* New keyframes */
+  @keyframes popIn      { 0%{opacity:0;transform:scale(.85) translateY(6px)} 60%{transform:scale(1.02) translateY(0)} 100%{opacity:1;transform:scale(1)} }
+  @keyframes riseIn     { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes breathe    { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+  @keyframes glowPulse  { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 40%,transparent)} 50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--brand) 0%,transparent)} }
+  @keyframes sheen      { 0%{transform:translateX(-120%) skewX(-18deg)} 100%{transform:translateX(220%) skewX(-18deg)} }
+  @keyframes wiggle     { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-7deg)} 75%{transform:rotate(7deg)} }
+  @keyframes underlineGrow { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+
+  /* Stagger extension */
+  .stagger-7 { animation-delay: 0.38s; }
+  .stagger-8 { animation-delay: 0.44s; }
+  .stagger-9 { animation-delay: 0.50s; }
+  .stagger-10{ animation-delay: 0.56s; }
+
+  /* Global button feel — กดได้นุ่มขึ้น (ไม่ทับ .btn-primary) */
+  button { transition: transform 0.13s cubic-bezier(0.34,1.56,0.64,1), filter 0.16s ease, box-shadow 0.18s ease; }
+  button:not(:disabled):active { transform: scale(0.96); }
+
+  /* Light sheen sweep บนปุ่มหลัก เมื่อ hover */
+  .btn-primary::before {
+    content:""; position:absolute; top:0; left:0; width:42%; height:100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+    transform: translateX(-120%) skewX(-18deg); pointer-events:none; opacity:0;
+  }
+  .btn-primary:hover::before { opacity:1; animation: sheen 0.85s ease-out; }
+
+  /* card-modern: ลื่นขึ้น + ขอบเรืองเล็กน้อยตอน hover */
+  .card-modern { will-change: transform, box-shadow; }
+  .card-modern:hover { border-color: color-mix(in srgb, var(--brand) 28%, transparent) !important; }
+
+  /* แถวในตาราง/รายการ: เลื่อนเล็กน้อย + แถบสีซ้าย */
+  .hrow, .prow, .acrow {
+    position: relative;
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important;
+  }
+  .hrow:hover, .prow:hover, .acrow:hover {
+    background: var(--surface-2) !important;
+    transform: translateX(3px);
+  }
+  .hrow::before, .prow::before, .acrow::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:0;
+    background: var(--brand); border-radius: 0 3px 3px 0;
+    transition: width 0.18s cubic-bezier(0.34,1.4,0.64,1);
+  }
+  .hrow:hover::before, .prow:hover::before, .acrow:hover::before { width:3px; }
+
+  /* ไอคอนในปุ่มหลัก: เด้งเบา ๆ ตอน hover */
+  .btn-primary:hover svg { animation: breathe 0.6s ease-in-out; }
+
+  /* Chip / pill pop เมื่อปรากฏ */
+  .chip-pop { animation: popIn 0.34s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+  /* Section header accent underline */
+  .head-underline { position: relative; }
+  .head-underline::after {
+    content:""; position:absolute; left:0; bottom:-4px; height:3px; width:100%;
+    background: linear-gradient(90deg, var(--brand), transparent);
+    border-radius:3px; transform-origin:left; animation: underlineGrow 0.6s cubic-bezier(0.22,1,0.36,1) 0.15s both;
+  }
+
+  /* Modal overlay + card entrance (reusable) */
+  .modal-overlay { animation: fadeIn 0.2s ease both; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+  .modal-card    { animation: popIn 0.32s cubic-bezier(0.34,1.45,0.64,1) both; }
+
+  /* Badge / notification เด้งเรียกความสนใจ */
+  .attn-wiggle { animation: wiggle 0.5s ease-in-out; }
+  .attn-glow   { animation: glowPulse 1.8s ease-in-out infinite; }
+
+  /* List entrance helper (ใช้ inline delay) */
+  .rise-in { animation: riseIn 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+
+  /* Avatar / icon button hover lift */
+  .icon-hover { transition: transform 0.16s ease; }
+  .icon-hover:hover { transform: translateY(-2px) scale(1.08); }
+
   /* ── เคารพ prefers-reduced-motion: ปิด animation ให้ผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว ── */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

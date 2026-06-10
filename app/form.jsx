@@ -788,11 +788,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
       {/* Feature 3: Copy Meds Modal */}
       {copyModalVisit && (
-        <div
+        <div className="modal-overlay"
           style={{ position: "fixed", inset: 0, zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.45)" }}
           onClick={(e) => { if (e.target === e.currentTarget) setCopyModalVisit(null); }}
         >
-          <div style={{ background: "var(--surface)", borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,.25)", width: "min(560px, 96vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div className="modal-card" style={{ background: "var(--surface)", borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,.25)", width: "min(560px, 96vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 18 }}>📋</span>
               <div style={{ flex: 1 }}>
