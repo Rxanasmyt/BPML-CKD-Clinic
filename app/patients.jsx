@@ -905,6 +905,100 @@ function PatientMedHandout({ rec, patient }) {
 }
 
 /* =========================================================================
+   LineReminderModal — สร้างข้อความนัดหมาย LINE/SMS สำหรับผู้ป่วย
+   ========================================================================= */
+function LineReminderModal({ rec, patient, onClose }) {
+  const [copied, setCopied] = React.useState(false);
+  const meds = (rec.meds || []).filter((m) => m.drug && m.drug.trim());
+  const followUp = patient?.followUp;
+  const followDate = followUp?.due ? fmtDate(followUp.due) : null;
+  const hasHighRisk = (rec.drpFindings || []).some((f) => f.level === "HIGH");
+  const hyperK = parseFloat(rec.k) > 5.5;
+
+  const lines = [
+    `🏥 คลินิกโรคไตเรื้อรัง (CKD)`,
+    `─────────────────────`,
+    `สวัสดีค่ะ คุณ${rec.name}`,
+    ``,
+    followDate ? `📅 วันนัดครั้งต่อไป: ${followDate}` : `📅 วันนัด: กรุณาติดต่อคลินิก`,
+    followUp?.note ? `   หมายเหตุ: ${followUp.note}` : null,
+    `⏰ กรุณามาก่อนเวลา 15 นาที`,
+    `🩸 งดอาหาร-น้ำก่อนตรวจเลือด (6–8 ชั่วโมง)`,
+    ``,
+    meds.length ? `💊 ยาที่ต้องนำมาทุกครั้ง:` : null,
+    ...meds.map((m, i) => `  ${i + 1}. ${m.drug}${m.strength ? ` ${m.strength}` : ""}${m.dose ? ` — ${m.dose}` : ""}`),
+    ``,
+    `⚠️ คำแนะนำสำหรับผู้ป่วยโรคไต:`,
+    `  • ห้ามซื้อยาแก้ปวด NSAID กินเอง (ibuprofen, diclofenac)`,
+    `  • ลดอาหารเค็มและโปรตีน`,
+    `  • ดื่มน้ำตามที่แพทย์กำหนด`,
+    `  • ห้ามหยุดยาหรือปรับขนาดเองโดยไม่ปรึกษาแพทย์`,
+    hyperK ? `  • ⚡ โพแทสเซียมสูง — เลี่ยงกล้วย ส้ม มะเขือเทศ มันฝรั่ง` : null,
+    hasHighRisk ? `` : null,
+    hasHighRisk ? `🚨 มีปัญหาด้านยาที่ต้องติดตาม — กรุณาแจ้งเภสัชกรเมื่อมาพบ` : null,
+    ``,
+    `📞 สอบถามเพิ่มเติม: ติดต่อคลินิก`,
+    `─────────────────────`,
+  ].filter((l) => l !== null).join("\n");
+
+  function copy() {
+    navigator.clipboard.writeText(lines).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }).catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = lines;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 500, boxShadow: "0 24px 60px rgba(0,0,0,.25)", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: "#dcfce7", display: "grid", placeItems: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 19 }}>💬</span>
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>ข้อความนัดหมาย LINE / SMS</div>
+            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>คัดลอกแล้วส่งผ่าน LINE หรือ SMS ให้ผู้ป่วย</div>
+          </div>
+          <button onClick={onClose} style={{ marginLeft: "auto", border: "none", background: "none", cursor: "pointer", padding: 4 }}>
+            <Icon name="x" size={20} color="var(--ink-2)" />
+          </button>
+        </div>
+
+        {/* Message preview */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
+          <pre style={{ margin: 0, padding: "16px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 13, color: "var(--ink)", lineHeight: 1.75, whiteSpace: "pre-wrap", fontFamily: "var(--sans)" }}>
+            {lines}
+          </pre>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, padding: "16px 22px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+          <button onClick={copy}
+            style={{ flex: 1, padding: "12px", background: copied ? "#16a34a" : "#0d9488", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            <span>{copied ? "✓" : "📋"}</span>{copied ? "คัดลอกแล้ว!" : "คัดลอกข้อความ"}
+          </button>
+          <button onClick={onClose}
+            style={{ padding: "12px 18px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" }}>
+            ปิด
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
    AiSummaryModal — สรุป BPML สำหรับแพทย์ด้วย Claude AI
    ========================================================================= */
 function AiSummaryModal({ rec, patient, onClose }) {
@@ -1083,6 +1177,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const [activeTab, setActiveTab] = React.useState("detail");
   const [printOpen, setPrintOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  const [lineOpen, setLineOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
   const rec = history.find((r) => r.id === selId) || cur;
   const rRisk = computeRisk(rec);
@@ -1095,6 +1190,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
     <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1100, margin: "0 auto" }}>
       {printOpen && <PrintModal rec={rec} patient={cur} onClose={() => setPrintOpen(false)} />}
       {aiOpen && <AiSummaryModal rec={rec} patient={cur} onClose={() => setAiOpen(false)} />}
+      {lineOpen && <LineReminderModal rec={rec} patient={cur} onClose={() => setLineOpen(false)} />}
       {deleteTarget && <ConfirmDeleteModal rec={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={(reason) => { setDeleteTarget(null); onDelete(deleteTarget, reason); }} />}
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}><Icon name="chevron" size={16} color="var(--ink-2)" />กลับ</button>
 
@@ -1113,6 +1209,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={() => setAiOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>🤖 สรุป AI สำหรับแพทย์</button>
+            <button onClick={() => setLineOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>💬 LINE / SMS</button>
             <button onClick={() => setPrintOpen(true)} style={ghostBtn}><Icon name="download" size={15} />พิมพ์ / PDF</button>
             <button onClick={() => onEdit(rec)} style={ghostBtn}><Icon name="edit" size={15} />แก้ไข</button>
             <button onClick={() => setDeleteTarget(rec)}
@@ -1273,4 +1370,4 @@ function segBtn2(on, k) {
 
 // fmtDate and TH_MONTHS defined in data.jsx
 
-Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, fmtDate, DeleteLogPage });
+Object.assign(window, { PatientsList, PatientDetail, AiSummaryModal, LineReminderModal, fmtDate, DeleteLogPage });

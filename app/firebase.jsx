@@ -2,6 +2,13 @@
    firebase.jsx — โหลด Firebase SDK แบบ dynamic + fallback localStorage
    ========================================================================= */
 
+/* ---- Offline Queue (localStorage-backed) ---- */
+const _OQ_KEY = "pharm_ckd_offline_queue_v1";
+function _oqGet() { try { return JSON.parse(localStorage.getItem(_OQ_KEY) || "[]"); } catch(e) { return []; } }
+function _oqSet(q) { try { localStorage.setItem(_OQ_KEY, JSON.stringify(q)); } catch(e) {} }
+function _oqDispatch(count) { window.dispatchEvent(new CustomEvent("offline-queue-changed", { detail: { count } })); }
+window.OfflineQueue = { getCount: () => _oqGet().length, flush: async () => 0 };
+
 function _buildLocalStores() {
   // Simple localStorage user store (used before Firebase loads)
   const LS_USERS = "pharm_ckd_users_v1";
@@ -105,6 +112,14 @@ function _loadScript(src) {
       if (!rec.id) rec.id = "r" + Date.now();
       if (!rec.createdAt) rec.createdAt = now;
       rec.updatedAt = now;
+      if (!navigator.onLine) {
+        const q = _oqGet();
+        const idx = q.findIndex((x) => x.id === rec.id);
+        if (idx >= 0) q[idx] = rec; else q.push(rec);
+        _oqSet(q);
+        _oqDispatch(q.length);
+        return rec;
+      }
       await db.collection(COLL_REC).doc(rec.id).set(rec);
       return rec;
     },
@@ -162,6 +177,34 @@ function _loadScript(src) {
   window.FirebaseUserStore = FirebaseUserStore = RealUserStore;
   window.db = db;
   console.log("✅ Firebase Firestore connected");
+
+  // ---- Offline queue flush (RealStore พร้อมแล้ว) ----
+  window.OfflineQueue.flush = async () => {
+    const q = _oqGet();
+    if (!q.length) return 0;
+    let synced = 0;
+    for (const rec of [...q]) {
+      try {
+        const now = new Date().toISOString();
+        if (!rec.createdAt) rec.createdAt = now;
+        rec.updatedAt = now;
+        await db.collection(COLL_REC).doc(rec.id).set(rec);
+        synced++;
+        _oqSet(_oqGet().filter((x) => x.id !== rec.id));
+      } catch(e) { break; }
+    }
+    _oqDispatch(_oqGet().length);
+    return synced;
+  };
+  window.addEventListener("online", async () => {
+    const pending = _oqGet().length;
+    if (pending > 0) {
+      const n = await window.OfflineQueue.flush();
+      if (n > 0 && window.showToast) window.showToast(`sync ${n} รายการจากคิวแล้ว`, "success", "ซิงค์สำเร็จ ✓");
+    }
+  });
+  // Flush any queued records from before Firebase loaded
+  if (navigator.onLine && _oqGet().length > 0) window.OfflineQueue.flush();
 
   // แจ้ง App ให้ restart listener
   window.dispatchEvent(new CustomEvent("firebase-ready"));

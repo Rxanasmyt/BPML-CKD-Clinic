@@ -126,6 +126,23 @@ function App() {
   }, []);
 
   const [dataReady, setDataReady] = React.useState(false);
+  const [isOnline, setIsOnline] = React.useState(navigator.onLine);
+  const [offlineQueueCount, setOfflineQueueCount] = React.useState(
+    () => (typeof window.OfflineQueue !== "undefined" ? window.OfflineQueue.getCount() : 0)
+  );
+  React.useEffect(() => {
+    function onOnline()  { setIsOnline(true); }
+    function onOffline() { setIsOnline(false); }
+    function onQueueChange(e) { setOfflineQueueCount(e.detail.count); }
+    window.addEventListener("online",  onOnline);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("offline-queue-changed", onQueueChange);
+    return () => {
+      window.removeEventListener("online",  onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("offline-queue-changed", onQueueChange);
+    };
+  }, []);
 
   /* --- Global keyboard shortcuts ---
      "/"           → โฟกัสช่องค้นหา
@@ -251,7 +268,11 @@ function App() {
     try {
       const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       const saved = await FirebaseStore.save({ ...rec, time });
-      showToast("บันทึกข้อมูลผู้ป่วยสำเร็จ", "success", "บันทึกแล้ว ✓");
+      if (!navigator.onLine) {
+        showToast("บันทึกในคิวแล้ว — จะ sync อัตโนมัติเมื่อกลับออนไลน์", "warning", "รอ sync");
+      } else {
+        showToast("บันทึกข้อมูลผู้ป่วยสำเร็จ", "success", "บันทึกแล้ว ✓");
+      }
       setRoute({ view: "patient", hn: saved.hn });
     } catch (e) {
       console.error("saveRecord error:", e);
@@ -374,6 +395,27 @@ function App() {
 
       <main style={{ flex: 1, minWidth: 0, paddingBottom: isMobile ? 64 : 0 }}>
         {!isMobile && <TopBar syncState={syncState} dueFollow={dueFollow} user={user} onOpenPatient={(hn) => setRoute({ view: "patient", hn })} records={records} onNavigate={setRoute} currentTheme={t.theme} onToggleDark={() => setTweak("theme", t.theme === "dark" ? "teal" : "dark")} />}
+        {/* Offline / Queue banner */}
+        {(!isOnline || offlineQueueCount > 0) && (
+          <div style={{ background: !isOnline ? "#78350f" : "#1e3a5f", color: "#fff", padding: "9px 18px",
+            display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600,
+            borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+            <span style={{ fontSize: 16 }}>{!isOnline ? "📵" : "🔄"}</span>
+            <span>
+              {!isOnline
+                ? "ออฟไลน์อยู่ — ข้อมูลที่บันทึกจะถูกเก็บไว้และ sync เมื่อกลับออนไลน์"
+                : `กำลังรอ sync ${offlineQueueCount} รายการ`}
+            </span>
+            {isOnline && offlineQueueCount > 0 && (
+              <button onClick={() => window.OfflineQueue && window.OfflineQueue.flush()}
+                style={{ marginLeft: "auto", padding: "4px 13px", background: "rgba(255,255,255,.2)",
+                  color: "#fff", borderRadius: 6, border: "1px solid rgba(255,255,255,.3)",
+                  cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "var(--sans)" }}>
+                sync เดี๋ยวนี้
+              </button>
+            )}
+          </div>
+        )}
         {!dataReady && syncState === "connecting" ? (
           <div style={{ padding: "clamp(16px,2.2vw,28px)", maxWidth: 1380, margin: "0 auto" }}>
             <div style={{ display:"flex", gap:16, marginBottom:20 }}>

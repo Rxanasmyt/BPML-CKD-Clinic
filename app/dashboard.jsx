@@ -327,6 +327,22 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
     (r.drps || []).includes("nephrotoxic") || (r.meds || []).some((m) => (m.flags||[]).includes("nephrotoxic"))
   ).length;
 
+  /* ── DRP Resolution Rate (drpFollowup loop data) ── */
+  let _drpResolved = 0, _drpOngoing = 0, _drpWorsened = 0, _drpPending = 0;
+  scope.forEach((r) => {
+    const fu = r.drpFollowup || {};
+    (r.drps || []).forEach((key) => {
+      const v = fu[key];
+      if (!v) _drpPending++;
+      else if (v === "resolved") _drpResolved++;
+      else if (v === "ongoing") _drpOngoing++;
+      else if (v === "worsened") _drpWorsened++;
+      else _drpPending++;
+    });
+  });
+  const drpFollowTotal = _drpResolved + _drpOngoing + _drpWorsened + _drpPending;
+  const drpResolveRate = drpFollowTotal ? Math.round((_drpResolved / drpFollowTotal) * 100) : 0;
+
   /* ── Recent activity ── */
   const recentActivity = [...scope].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0, 6);
 
@@ -446,6 +462,12 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
             ? "linear-gradient(135deg,#d97706 0%,#b45309 55%,#78350f 100%)"
             : "linear-gradient(135deg,#7c3aed 0%,#6d28d9 55%,#4c1d95 100%)"}
           sub={overdueList.length ? `⚠️ เกินกำหนด ${overdueList.length} ราย` : "ทุกรายอยู่ในกำหนด"} />
+        {drpFollowTotal > 0 && (
+          <GradKpi stagger={4}
+            label="DRP Resolution Rate" value={drpResolveRate} unit="%" icon="🔄"
+            grad="linear-gradient(135deg,#0284c7 0%,#0369a1 55%,#1e3a5f 100%)"
+            sub={`แก้ไขแล้ว ${_drpResolved} · ยังมี ${_drpOngoing} · แย่ลง ${_drpWorsened}`} />
+        )}
       </div>
 
       {/* ── ROW 2: Risk + Stage + Activity ── */}
@@ -553,6 +575,41 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
             : <Empty text="ยังไม่มีข้อมูล" />}
         </div>
       </div>
+
+      {/* ── DRP Resolution Detail Card (แสดงเฉพาะเมื่อมีข้อมูล drpFollowup) ── */}
+      {drpFollowTotal > 0 && (
+        <div className="card-modern stagger" style={{ background:"var(--surface)", borderRadius:18, padding:"20px 24px", marginBottom:16,
+          display:"flex", alignItems:"center", gap:24, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:9, flexShrink:0 }}>
+            <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#0284c722,#0284c744)", display:"grid", placeItems:"center" }}>
+              <span style={{ fontSize:17 }}>🔄</span>
+            </div>
+            <h3 style={{ fontSize:15, fontWeight:700, color:"var(--ink)", margin:0 }}>DRP Resolution Tracking</h3>
+          </div>
+          <div style={{ flex:1, display:"flex", alignItems:"center", gap:20, flexWrap:"wrap" }}>
+            <Ring pct={drpResolveRate} color={drpResolveRate>=70?"#16a34a":drpResolveRate>=40?"#d97706":"#dc2626"}
+              size={72} stroke={7} label="แก้ไขแล้ว" />
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+              {[
+                { label:"แก้ไขแล้ว", n:_drpResolved, color:"#16a34a", bg:"#f0fdf4" },
+                { label:"ยังมีอยู่",   n:_drpOngoing,  color:"#d97706", bg:"#fffbeb" },
+                { label:"แย่ลง",      n:_drpWorsened, color:"#dc2626", bg:"#fef2f2" },
+                { label:"รอติดตาม",   n:_drpPending,  color:"#6b7280", bg:"var(--surface-2)" },
+              ].map(({ label, n, color, bg }) => (
+                <div key={label} style={{ padding:"10px 14px", background:bg, borderRadius:12,
+                  border:`1px solid ${color}22`, minWidth:80, textAlign:"center" }}>
+                  <div style={{ fontFamily:"var(--mono)", fontSize:26, fontWeight:800, color, lineHeight:1 }}>{n}</div>
+                  <div style={{ fontSize:11, color, fontWeight:600, marginTop:3 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize:12.5, color:"var(--ink-2)", maxWidth:220, lineHeight:1.6 }}>
+              ข้อมูลจาก "ติดตามผล DRP" ใน visit ล่าสุดของแต่ละผู้ป่วย<br />
+              <span style={{ color:"var(--ink)", fontWeight:600 }}>{drpFollowTotal} DRP ทั้งหมด</span> มีการ loop ติดตามผลแล้ว
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ROW 3: DRP + Trend + Follow-up ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 1fr", gap:16, marginBottom:16 }} className="dash-grid">
