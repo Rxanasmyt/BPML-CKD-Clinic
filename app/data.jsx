@@ -175,9 +175,37 @@ function todayISO() { const d = new Date(); const off = d.getTimezoneOffset(); r
 function isoAddDays(n) { const d = new Date(); d.setDate(d.getDate() + n); const off = d.getTimezoneOffset(); return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10); } // วันนี้ + n วัน
 function monthStartISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; } // วันแรกของเดือนนี้
 
+/* ── Haptic feedback — สั่นเบา ๆ บนมือถือ (ไม่ทำงานบน desktop) ── */
+function haptic(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern || 12); } catch (e) {} }
+
+/* ── CKD Progression — วิเคราะห์แนวโน้ม eGFR + การข้าม stage จากประวัติทุก visit ──
+   รับ records ทั้งหมด + hn → คืน { level, perYear, from, to, days, stageFrom, stageTo, label, color }
+   level: "rapid" (ลด ≥5/ปี) | "decline" (3-5/ปี) | "improving" (เพิ่ม >2/ปี) | "stable" | null (ข้อมูลไม่พอ) */
+function _stageNum(s) { const n = parseInt(String(s || "").replace(/[^0-9]/g, ""), 10); return isNaN(n) ? 0 : n; }
+function medProgression(records, hn) {
+  const vis = (records || [])
+    .filter((r) => r.hn === hn && r.date && !isNaN(parseFloat(r.egfr)))
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  if (vis.length < 2) return null;
+  const first = vis[0], last = vis[vis.length - 1];
+  const v0 = parseFloat(first.egfr), v1 = parseFloat(last.egfr);
+  const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+  if (days < 60) return null; // ช่วงเวลาสั้นเกินไป ไม่ประเมิน
+  const drop = v0 - v1;                       // บวก = แย่ลง
+  const perYear = +(drop / (days / 365)).toFixed(1);
+  const stageFrom = _stageNum(first.ckdStage), stageTo = _stageNum(last.ckdStage);
+  let level, label, color;
+  if (perYear >= 5)      { level = "rapid";     label = `eGFR ↓${perYear}/ปี`; color = "#dc2626"; }
+  else if (perYear >= 3) { level = "decline";   label = `eGFR ↓${perYear}/ปี`; color = "#d97706"; }
+  else if (perYear <= -2){ level = "improving"; label = `eGFR ↑${Math.abs(perYear)}/ปี`; color = "#16a34a"; }
+  else                   { level = "stable";    label = "eGFR คงที่"; color = "#16a34a"; }
+  return { level, perYear, from: v0, to: v1, days: Math.round(days), stageFrom, stageTo,
+    stageWorsened: stageTo > stageFrom, label, color, visits: vis.length };
+}
+
 Object.assign(window, {
   SOURCE_OPTIONS, DRP_OPTIONS, drpOption, drpLabel, INTERVENTION_OPTIONS,
   CKD_STAGES, computeRisk, RISK_META, Store, USERS,
   TH_MONTHS, fmtDate, todayDate, todayISO, isoAddDays, monthStartISO,
-  hashPin, randomSalt,
+  hashPin, randomSalt, haptic, medProgression,
 });

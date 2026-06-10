@@ -141,7 +141,18 @@ function PatientCard({ r, onOpen, idx }) {
               HN {r.hn} · {r.age} ปี
             </div>
           </div>
-          <StagePill stage={r.ckdStage} />
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:5 }}>
+            <StagePill stage={r.ckdStage} />
+            {r.progression && (r.progression.level === "rapid" || r.progression.level === "decline" || r.progression.stageWorsened) && (
+              <span title={`ประวัติ ${r.progression.visits} visit · eGFR ${r.progression.from}→${r.progression.to} ใน ${r.progression.days} วัน${r.progression.stageWorsened ? ` · ข้าม stage G${r.progression.stageFrom}→G${r.progression.stageTo}` : ""}`}
+                className={r.progression.level === "rapid" ? "attn-glow" : ""}
+                style={{ display:"inline-flex", alignItems:"center", gap:3, fontSize:10.5, fontWeight:700,
+                  color: r.progression.color, background: `${r.progression.color}14`,
+                  border:`1px solid ${r.progression.color}55`, padding:"2px 7px", borderRadius:7, whiteSpace:"nowrap" }}>
+                📉 {r.progression.stageWorsened ? `G${r.progression.stageFrom}→G${r.progression.stageTo}` : r.progression.label}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Row 2: Lab values */}
@@ -191,11 +202,12 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   const [riskF, setRiskF] = React.useState("all");
   const [stageF, setStageF] = React.useState("all");
   const [dueOnly, setDueOnly] = React.useState(false);
+  const [declineOnly, setDeclineOnly] = React.useState(false);
   const [sort, setSort] = React.useState("risk");
   const [view, setView] = React.useState("card"); // card | table
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
-  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
+  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r), progression: medProgression(records, r.hn) }));
   const due7  = isoAddDays(7), today = todayISO();
   let rows = [...all];
 
@@ -212,6 +224,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   if (riskF !== "all") rows = rows.filter((r) => r.risk.band === riskF);
   if (stageF !== "all") rows = rows.filter((r) => r.ckdStage === stageF);
   if (dueOnly) rows = rows.filter((r) => r.followUp?.due && r.followUp.due <= due7);
+  if (declineOnly) rows = rows.filter((r) => r.progression && (r.progression.level === "rapid" || r.progression.level === "decline" || r.progression.stageWorsened));
   rows.sort((a, b) => {
     if (sort === "risk") return b.risk.score - a.risk.score;
     if (sort === "date") return (b.date || "").localeCompare(a.date || "");
@@ -220,6 +233,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
     return 0;
   });
   const dueCount = all.filter((r) => r.followUp?.due && r.followUp.due <= due7).length;
+  const declineCount = all.filter((r) => r.progression && (r.progression.level === "rapid" || r.progression.level === "decline" || r.progression.stageWorsened)).length;
 
   const riskCounts = { high:0, medium:0, low:0 };
   all.forEach((r) => riskCounts[r.risk.band]++);
@@ -292,6 +306,12 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
             background: dueOnly ? "#fffbeb" : "var(--surface)", borderColor: dueOnly ? "#fcd34d" : "var(--border)",
             color: dueOnly ? "#b45309" : "var(--ink-2)", fontWeight: dueOnly ? 700 : 500, fontFamily:"var(--sans)" }}>
           📅 นัดใกล้ถึง{dueCount > 0 && <span style={{ fontFamily:"var(--mono)", fontWeight:800 }}>{dueCount}</span>}
+        </button>
+        <button onClick={() => setDeclineOnly((v) => !v)}
+          style={{ ...inS, width:"auto", height:42, cursor:"pointer", display:"flex", alignItems:"center", gap:6,
+            background: declineOnly ? "#fef2f2" : "var(--surface)", borderColor: declineOnly ? "#fca5a5" : "var(--border)",
+            color: declineOnly ? "#b91c1c" : "var(--ink-2)", fontWeight: declineOnly ? 700 : 500, fontFamily:"var(--sans)" }}>
+          📉 เสื่อมเร็ว{declineCount > 0 && <span style={{ fontFamily:"var(--mono)", fontWeight:800 }}>{declineCount}</span>}
         </button>
         <select value={sort} onChange={(e) => setSort(e.target.value)}
           style={{ ...inS, width:"auto", height:42, cursor:"pointer" }}>
@@ -1201,6 +1221,153 @@ DRP ที่พบ: ${drpText}
   );
 }
 
+/* =========================================================================
+   DrugSafetyCard — ตรวจ DDI + ข้อห้าม/ปรับขนาดตามไต ของยาใน visit นี้
+   ใช้ checkDDI / checkContraindicated / checkDoseAdjustment จาก drp_engine
+   ========================================================================= */
+function DrugSafetyCard({ rec }) {
+  const sevMeta = {
+    major:    { c:"#b91c1c", bg:"#fef2f2", bd:"#fca5a5", label:"รุนแรง" },
+    moderate: { c:"#b45309", bg:"#fffbeb", bd:"#fcd34d", label:"ปานกลาง" },
+    minor:    { c:"#1d4ed8", bg:"#eff6ff", bd:"#bfdbfe", label:"เล็กน้อย" },
+  };
+  const sevRank = { major:0, moderate:1, minor:2 };
+
+  const drugNames = [
+    ...(rec.meds || []).map((m) => m.drug),
+    ...(rec.otcItems || []).map((o) => o.name),
+  ].filter((d) => d && d.trim());
+
+  const ddi = (typeof checkDDI === "function") ? checkDDI(drugNames) : [];
+
+  // ข้อห้ามใช้ / ต้องปรับขนาดตาม eGFR (ต่อยา)
+  const renalFlags = [];
+  (rec.meds || []).forEach((m) => {
+    if (!m.drug || !m.drug.trim()) return;
+    const ci = (typeof checkContraindicated === "function") ? checkContraindicated(m.drug, rec.egfr) : null;
+    const da = (typeof checkDoseAdjustment === "function") ? checkDoseAdjustment(m.drug, rec.egfr) : null;
+    if (ci) renalFlags.push({ drug: m.drug, severity: ci.level === "contraindicated" ? "major" : "moderate", kind: ci.level === "contraindicated" ? "ห้ามใช้" : "ระวัง", message: ci.message });
+    else if (da) renalFlags.push({ drug: m.drug, severity: da.level === "avoid" ? "major" : "moderate", kind: da.level === "avoid" ? "ควรเลี่ยง" : "ปรับขนาด", message: da.message });
+  });
+
+  const total = ddi.length + renalFlags.length;
+  ddi.sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
+  renalFlags.sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
+
+  if (drugNames.length < 1) return null;
+
+  return (
+    <DetailCard title={`ตรวจความปลอดภัยของยา${total ? ` · พบ ${total} ประเด็น` : ""}`} icon="shield">
+      {total === 0 ? (
+        <div style={{ display:"flex", alignItems:"center", gap:9, padding:"10px 12px", background:"#f0fdf4",
+          border:"1px solid #bbf7d0", borderRadius:10, fontSize:13, color:"#15803d", fontWeight:600 }}>
+          <span style={{ fontSize:17 }}>✅</span> ไม่พบอันตรกิริยาหรือข้อห้ามใช้ตามฐานข้อมูล ({drugNames.length} รายการยา)
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+          {/* ข้อห้าม/ปรับขนาดตามไต */}
+          {renalFlags.map((f, i) => {
+            const m = sevMeta[f.severity];
+            return (
+              <div key={"renal"+i} style={{ border:`1px solid ${m.bd}`, background:m.bg, borderRadius:11, padding:"10px 13px" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:10.5, fontWeight:800, color:"#fff", background:m.c, padding:"2px 8px", borderRadius:99 }}>{f.kind}</span>
+                  <span style={{ fontSize:13.5, fontWeight:700, color:m.c }}>{f.drug}</span>
+                  <span style={{ fontSize:11, color:"var(--ink-2)" }}>· eGFR {rec.egfr || "?"}</span>
+                </div>
+                <div style={{ fontSize:12.5, color:"var(--ink)", lineHeight:1.5 }}>{f.message}</div>
+              </div>
+            );
+          })}
+          {/* Drug–Drug Interactions */}
+          {ddi.map((d, i) => {
+            const m = sevMeta[d.severity];
+            return (
+              <div key={"ddi"+i} style={{ border:`1px solid ${m.bd}`, background:m.bg, borderRadius:11, padding:"10px 13px" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:10.5, fontWeight:800, color:"#fff", background:m.c, padding:"2px 8px", borderRadius:99 }}>{m.label}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:m.c }}>{d.drugA}</span>
+                  <span style={{ fontSize:12, color:"var(--ink-2)" }}>✕</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:m.c }}>{d.drugB}</span>
+                </div>
+                <div style={{ fontSize:12.5, color:"var(--ink)", lineHeight:1.5 }}>{d.message}</div>
+              </div>
+            );
+          })}
+          <div style={{ fontSize:11, color:"var(--ink-2)", marginTop:2 }}>
+            * ตรวจอัตโนมัติจากฐานข้อมูล DDI/CKD — โปรดใช้วิจารณญาณทางคลินิกประกอบเสมอ
+          </div>
+        </div>
+      )}
+    </DetailCard>
+  );
+}
+
+/* =========================================================================
+   MedTimelineCard — ไทม์ไลน์การเปลี่ยนแปลงรายการยาข้าม visit (med reconciliation)
+   ใช้ diffMedLists เทียบ visit ที่ติดกัน
+   ========================================================================= */
+function MedTimelineCard({ history }) {
+  const chrono = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  if (chrono.length < 2) return null;
+
+  const baseCount = (chrono[0].meds || []).filter((m) => m.drug && m.drug.trim()).length;
+  const steps = [];
+  for (let i = 1; i < chrono.length; i++) {
+    steps.push({ visit: chrono[i], diff: diffMedLists(chrono[i - 1].meds || [], chrono[i].meds || []) });
+  }
+
+  const dot = (color) => ({ width:11, height:11, borderRadius:99, background:color, flexShrink:0,
+    boxShadow:`0 0 0 3px ${color}33`, marginTop:3 });
+  const chip = (text, color, bg) => (
+    <span style={{ fontSize:11.5, color, background:bg, border:`1px solid ${color}44`,
+      padding:"2px 8px", borderRadius:7, fontWeight:600, display:"inline-block", margin:"2px 4px 2px 0" }}>{text}</span>
+  );
+
+  return (
+    <DetailCard title="ไทม์ไลน์การเปลี่ยนแปลงยา" icon="clock">
+      <div style={{ position:"relative", paddingLeft:6 }}>
+        {/* baseline visit */}
+        <div style={{ display:"flex", gap:12, paddingBottom:14, position:"relative" }}>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+            <div style={dot("var(--brand)")} />
+            <div style={{ flex:1, width:2, background:"var(--border)", marginTop:2 }} />
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)" }}>{fmtDate(chrono[0].date)} <span style={{ fontSize:11, fontWeight:500, color:"var(--ink-2)" }}>· เริ่มต้น</span></div>
+            <div style={{ fontSize:12, color:"var(--ink-2)", marginTop:2 }}>มียา {baseCount} รายการ</div>
+          </div>
+        </div>
+        {steps.map((s, i) => {
+          const { added, stopped, changed, unchanged } = s.diff;
+          const noChange = !added.length && !stopped.length && !changed.length;
+          const isLast = i === steps.length - 1;
+          return (
+            <div key={s.visit.id} style={{ display:"flex", gap:12, paddingBottom: isLast ? 0 : 14 }}>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                <div style={dot(noChange ? "#94a3b8" : "#d97706")} />
+                {!isLast && <div style={{ flex:1, width:2, background:"var(--border)", marginTop:2 }} />}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)" }}>{fmtDate(s.visit.date)}</div>
+                {noChange ? (
+                  <div style={{ fontSize:12, color:"var(--ink-2)", marginTop:3 }}>ไม่มีการเปลี่ยนแปลงรายการยา ({unchanged} รายการคงเดิม)</div>
+                ) : (
+                  <div style={{ marginTop:4 }}>
+                    {added.map((m, j) => <React.Fragment key={"a"+j}>{chip(`+ เริ่ม ${m.drug}${m.strength ? " "+m.strength : ""}`, "#16a34a", "#f0fdf4")}</React.Fragment>)}
+                    {stopped.map((m, j) => <React.Fragment key={"s"+j}>{chip(`− หยุด ${m.drug}`, "#dc2626", "#fef2f2")}</React.Fragment>)}
+                    {changed.map((c, j) => <React.Fragment key={"c"+j}>{chip(`✎ ${c.drug}: ${c.from || "?"} → ${c.to || "?"}`, "#b45309", "#fffbeb")}</React.Fragment>)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </DetailCard>
+  );
+}
+
 /* ---------- รายละเอียด + ประวัติ ---------- */
 function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const history = records.filter((r) => r.hn === hn).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -1342,6 +1509,8 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
             {rec.otcHerbal && <div style={{ marginTop: 10, fontSize: 12.5, color: "#b45309", display: "flex", gap: 7, alignItems: "center" }}><Icon name="alert" size={14} color="#b45309" />ยานอก/สมุนไพร: {rec.otcDetail || "มี"}</div>}
           </DetailCard>
 
+          <DrugSafetyCard rec={rec} />
+
           {drpLabels.length > 0 && (
             <DetailCard title="ปัญหาด้านยา (DRP)" icon="alert">
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: rec.drpDetail ? 10 : 0 }}>
@@ -1360,6 +1529,8 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
             <KV k="เภสัชกรผู้บันทึก" v={rec.pharmacist} />
             {rec.physician && <KV k="แพทย์" v={rec.physician} />}
           </DetailCard>
+
+          <MedTimelineCard history={history} />
         </div>
       </div>
       )} {/* end activeTab===detail */}

@@ -266,6 +266,7 @@ function App() {
       };
       // FirebaseStore.remove จัดการทั้ง audit log + ลบ record และ non-blocking เมื่อออฟไลน์
       await window.FirebaseStore.remove(rec.id, log);
+      haptic([18, 40, 18]);
       showToast(
         navigator.onLine ? `ลบ Visit ${rec.date} ของ ${rec.name} แล้ว` : "ลบแล้ว — จะ sync เมื่อกลับออนไลน์",
         navigator.onLine ? "success" : "warning", navigator.onLine ? "ลบแล้ว" : "รอ sync");
@@ -283,6 +284,7 @@ function App() {
     try {
       const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       const saved = await FirebaseStore.save({ ...rec, time });
+      haptic(navigator.onLine ? 14 : [14, 30, 14]);
       if (!navigator.onLine) {
         showToast("บันทึกในคิวแล้ว — จะ sync อัตโนมัติเมื่อกลับออนไลน์", "warning", "รอ sync");
       } else {

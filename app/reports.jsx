@@ -38,25 +38,33 @@ function ReportsPage({ records, user }) {
   const yearOpts = [];
   for (let y = today.getFullYear(); y >= today.getFullYear() - 4; y--) yearOpts.push(y);
 
-  function exportCSV() {
+  function buildCSV(list) {
     const headers = ["id", "date", "hn", "name", "age", "ckdStage", "egfr", "scr", "k", "na", "hb", "hco3", "phos", "ca", "uacr", "dm", "bpSys", "bpDia", "hr", "allergy", "drps", "drpDetail", "discrepancy", "discrepancyType", "interventions", "outcome", "pharmacist", "physician"];
-    const rows = monthRecords.map((r) => headers.map((h) => {
+    const rows = list.map((r) => headers.map((h) => {
       const v = r[h];
       if (Array.isArray(v)) return '"' + v.join("; ").replace(/"/g, '""') + '"';
       if (v == null) return "";
       const s = String(v).replace(/"/g, '""');
       return s.includes(",") || s.includes("\n") || s.includes('"') ? `"${s}"` : s;
     }));
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  }
+  function downloadCSV(csv, name) {
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ckd_report_${monthStr}.csv`;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    if (typeof haptic === "function") haptic(14);
+  }
+  function exportCSV() { downloadCSV(buildCSV(monthRecords), `ckd_report_${monthStr}.csv`); }
+  function exportAllCSV() {
+    const sorted = [...records].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    downloadCSV(buildCSV(sorted), `ckd_all_records_${todayISO()}.csv`);
   }
 
   const kpiStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px", textAlign: "center" };
@@ -74,7 +82,11 @@ function ReportsPage({ records, user }) {
               <Icon name="download" size={18} color="#fff" />พิมพ์ / PDF
             </button>
             <button onClick={exportCSV} className="no-print" style={{ ...primaryBtn, background: "#16a34a" }}>
-              <Icon name="download" size={18} color="#fff" />Export CSV
+              <Icon name="download" size={18} color="#fff" />Export เดือนนี้
+            </button>
+            <button onClick={exportAllCSV} className="no-print" style={{ ...primaryBtn, background: "#0f766e" }}
+              title={`ส่งออกข้อมูลทั้งหมด ${records.length} รายการ`}>
+              <Icon name="download" size={18} color="#fff" />Export ทั้งหมด ({records.length})
             </button>
           </div>
         }
