@@ -2,12 +2,13 @@
    firebase.jsx — โหลด Firebase SDK แบบ dynamic + fallback localStorage
    ========================================================================= */
 
-/* ---- Offline Queue (localStorage-backed) ---- */
-const _OQ_KEY = "pharm_ckd_offline_queue_v1";
-function _oqGet() { try { return JSON.parse(localStorage.getItem(_OQ_KEY) || "[]"); } catch(e) { return []; } }
-function _oqSet(q) { try { localStorage.setItem(_OQ_KEY, JSON.stringify(q)); } catch(e) {} }
-function _oqDispatch(count) { window.dispatchEvent(new CustomEvent("offline-queue-changed", { detail: { count } })); }
-window.OfflineQueue = { getCount: () => _oqGet().length, flush: async () => 0 };
+/* ---- Offline status ----
+   Firestore enablePersistence จัดการคิวเขียนออฟไลน์ให้เอง (เขียน cache ทันที,
+   onSnapshot อัปเดต UI ทันที, sync อัตโนมัติเมื่อกลับออนไลน์, ข้ามเซสชันได้)
+   เรานับจำนวน write ที่ยังไม่ confirm จาก snapshot.metadata.hasPendingWrites */
+let _pendingCount = 0;
+function _setPending(n) { if (n !== _pendingCount) { _pendingCount = n; window.dispatchEvent(new CustomEvent("offline-queue-changed", { detail: { count: n } })); } }
+window.OfflineQueue = { getCount: () => _pendingCount };
 
 function _buildLocalStores() {
   // Simple localStorage user store (used before Firebase loads)
@@ -99,9 +100,12 @@ function _loadScript(src) {
   const RealStore = {
     listen(callback) {
       return db.collection(COLL_REC).onSnapshot(
+        { includeMetadataChanges: true },
         (snap) => {
           const recs = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
           recs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+          // นับเอกสารที่ยังเขียนไม่ confirm (pending write ขณะออฟไลน์)
+          _setPending(snap.docs.filter((d) => d.metadata.hasPendingWrites).length);
           callback(recs, null);
         },
         (err) => { console.error("Firestore:", err); callback(Store.all(), err); }
@@ -112,18 +116,17 @@ function _loadScript(src) {
       if (!rec.id) rec.id = "r" + Date.now();
       if (!rec.createdAt) rec.createdAt = now;
       rec.updatedAt = now;
-      if (!navigator.onLine) {
-        const q = _oqGet();
-        const idx = q.findIndex((x) => x.id === rec.id);
-        if (idx >= 0) q[idx] = rec; else q.push(rec);
-        _oqSet(q);
-        _oqDispatch(q.length);
-        return rec;
-      }
-      await db.collection(COLL_REC).doc(rec.id).set(rec);
+      const p = db.collection(COLL_REC).doc(rec.id).set(rec);
+      // ออนไลน์: รอ server ยืนยัน · ออฟไลน์: Firestore เขียน cache แล้ว sync เองภายหลัง (ไม่ await กัน hang)
+      if (navigator.onLine) await p; else p.catch(() => {});
       return rec;
     },
-    async remove(id) { await db.collection(COLL_REC).doc(id).delete(); },
+    async remove(id, log) {
+      const logP = log ? db.collection("pharm_ckd_delete_log").doc(log.id).set(log) : null;
+      const delP = db.collection(COLL_REC).doc(id).delete();
+      if (navigator.onLine) { if (logP) await logP.catch(() => {}); await delP; }
+      else { if (logP) logP.catch(() => {}); delP.catch(() => {}); }
+    },
     async reset() {
       const snap = await db.collection(COLL_REC).get();
       const batch = db.batch();
@@ -178,33 +181,11 @@ function _loadScript(src) {
   window.db = db;
   console.log("✅ Firebase Firestore connected");
 
-  // ---- Offline queue flush (RealStore พร้อมแล้ว) ----
-  window.OfflineQueue.flush = async () => {
-    const q = _oqGet();
-    if (!q.length) return 0;
-    let synced = 0;
-    for (const rec of [...q]) {
-      try {
-        const now = new Date().toISOString();
-        if (!rec.createdAt) rec.createdAt = now;
-        rec.updatedAt = now;
-        await db.collection(COLL_REC).doc(rec.id).set(rec);
-        synced++;
-        _oqSet(_oqGet().filter((x) => x.id !== rec.id));
-      } catch(e) { break; }
-    }
-    _oqDispatch(_oqGet().length);
-    return synced;
-  };
-  window.addEventListener("online", async () => {
-    const pending = _oqGet().length;
-    if (pending > 0) {
-      const n = await window.OfflineQueue.flush();
-      if (n > 0 && window.showToast) window.showToast(`sync ${n} รายการจากคิวแล้ว`, "success", "ซิงค์สำเร็จ ✓");
-    }
+  // ---- กลับมาออนไลน์: Firestore sync เองอัตโนมัติ — แจ้งผู้ใช้ถ้ามี write ค้าง ----
+  window.addEventListener("online", () => {
+    if (_pendingCount > 0 && window.showToast)
+      window.showToast(`กำลัง sync ${_pendingCount} รายการที่ค้างไว้...`, "info", "กลับมาออนไลน์");
   });
-  // Flush any queued records from before Firebase loaded
-  if (navigator.onLine && _oqGet().length > 0) window.OfflineQueue.flush();
 
   // แจ้ง App ให้ restart listener
   window.dispatchEvent(new CustomEvent("firebase-ready"));

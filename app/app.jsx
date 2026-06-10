@@ -247,13 +247,11 @@ function App() {
         reason: reason || "",
         snapshot: JSON.stringify(rec),
       };
-      if (window.db) {
-        await window.db.collection("pharm_ckd_delete_log").doc(log.id).set(log).catch((e) => console.warn("log failed:", e));
-        await window.db.collection("pharm_ckd_records").doc(rec.id).delete();
-      } else {
-        await window.FirebaseStore.remove(rec.id);
-      }
-      showToast(`ลบ Visit ${rec.date} ของ ${rec.name} แล้ว`, "success", "ลบแล้ว");
+      // FirebaseStore.remove จัดการทั้ง audit log + ลบ record และ non-blocking เมื่อออฟไลน์
+      await window.FirebaseStore.remove(rec.id, log);
+      showToast(
+        navigator.onLine ? `ลบ Visit ${rec.date} ของ ${rec.name} แล้ว` : "ลบแล้ว — จะ sync เมื่อกลับออนไลน์",
+        navigator.onLine ? "success" : "warning", navigator.onLine ? "ลบแล้ว" : "รอ sync");
       const remaining = records.filter((r) => r.hn === rec.hn && r.id !== rec.id);
       setRoute(remaining.length ? { view: "patient", hn: rec.hn } : { view: "patients" });
     } catch (e) {
@@ -302,7 +300,7 @@ function App() {
   if (!user) return <><LoginScreen onLogin={login} />{themePanel}</>;
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด (Firestore เป็น single source of truth)
-  const dueFollow = scope.filter((r) => r.followUp && r.followUp.due && r.followUp.due <= "2026-06-05")
+  const dueFollow = scope.filter((r) => r.followUp && r.followUp.due && r.followUp.due <= isoAddDays(7))
     .sort((a, b) => (a.followUp.due || "").localeCompare(b.followUp.due || ""));
 
   let page;
@@ -316,7 +314,7 @@ function App() {
     page = <PatientDetail hn={route.hn} records={records} user={user} onBack={() => setRoute({ view: "patients" })}
       onEdit={(rec) => setRoute({ view: "form", editing: rec })}
       onDelete={deleteRecord}
-      onNew={(p) => setRoute({ view: "form", editing: { hn: p.hn, name: p.name, age: p.age, ckdStage: p.ckdStage, allergy: p.allergy, date: "2026-05-29", meds: [], sources: [], drps: [], interventions: [], comparedPrev: false, comparedNew: false, discrepancy: "none", id: undefined } })} />;
+      onNew={(p) => setRoute({ view: "form", editing: { hn: p.hn, name: p.name, age: p.age, ckdStage: p.ckdStage, allergy: p.allergy, date: todayISO(), meds: [], sources: [], drps: [], interventions: [], comparedPrev: false, comparedNew: false, discrepancy: "none", id: undefined } })} />;
   else if (route.view === "settings")
     page = user.role === "admin"
       ? <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />
@@ -403,17 +401,9 @@ function App() {
             <span style={{ fontSize: 16 }}>{!isOnline ? "📵" : "🔄"}</span>
             <span>
               {!isOnline
-                ? "ออฟไลน์อยู่ — ข้อมูลที่บันทึกจะถูกเก็บไว้และ sync เมื่อกลับออนไลน์"
-                : `กำลังรอ sync ${offlineQueueCount} รายการ`}
+                ? `ออฟไลน์อยู่ — ข้อมูลถูกเก็บในเครื่องและ sync อัตโนมัติเมื่อกลับออนไลน์${offlineQueueCount > 0 ? ` (ค้าง ${offlineQueueCount} รายการ)` : ""}`
+                : `กำลัง sync ${offlineQueueCount} รายการที่ค้างไว้...`}
             </span>
-            {isOnline && offlineQueueCount > 0 && (
-              <button onClick={() => window.OfflineQueue && window.OfflineQueue.flush()}
-                style={{ marginLeft: "auto", padding: "4px 13px", background: "rgba(255,255,255,.2)",
-                  color: "#fff", borderRadius: 6, border: "1px solid rgba(255,255,255,.3)",
-                  cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "var(--sans)" }}>
-                sync เดี๋ยวนี้
-              </button>
-            )}
           </div>
         )}
         {!dataReady && syncState === "connecting" ? (
@@ -704,11 +694,11 @@ function TopBar({ syncState, dueFollow, user, onOpenPatient, records = [], onNav
             <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", fontSize: 13.5, fontWeight: 700, color: "var(--ink)" }}>การแจ้งเตือนติดตามผู้ป่วย</div>
             {dueFollow.length ? dueFollow.map((r) => (
               <button key={r.id} onClick={() => { setOpen(false); onOpenPatient(r.hn); }} className="acrow" style={{ display: "flex", gap: 10, width: "100%", padding: "12px 16px", border: "none", borderBottom: "1px solid var(--border)", background: "none", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
-                <span style={{ marginTop: 2 }}><Icon name="clock" size={16} color={r.followUp.due <= "2026-05-29" ? "#dc2626" : "#d97706"} /></span>
+                <span style={{ marginTop: 2 }}><Icon name="clock" size={16} color={r.followUp.due <= todayISO() ? "#dc2626" : "#d97706"} /></span>
                 <span style={{ flex: 1 }}>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{r.name} <span style={{ fontFamily: "var(--mono)", fontWeight: 400, color: "var(--ink-2)", fontSize: 11 }}>HN {r.hn}</span></span>
                   <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{r.followUp.note}</span>
-                  <span style={{ display: "block", fontSize: 11.5, color: r.followUp.due <= "2026-05-29" ? "#dc2626" : "#d97706", fontWeight: 600, marginTop: 2 }}>นัด {fmtDate(r.followUp.due)}{r.followUp.due <= "2026-05-29" && " · ครบกำหนด"}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: r.followUp.due <= todayISO() ? "#dc2626" : "#d97706", fontWeight: 600, marginTop: 2 }}>นัด {fmtDate(r.followUp.due)}{r.followUp.due <= todayISO() && " · ครบกำหนด"}</span>
                 </span>
               </button>
             )) : <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--ink-2)", fontSize: 13 }}>ไม่มีนัดติดตามที่ใกล้ถึง</div>}

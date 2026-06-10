@@ -293,8 +293,9 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
   const accepted    = withOutcome.filter((r) => r.outcome === "accepted").length;
   const acceptRate  = withOutcome.length ? Math.round((accepted / withOutcome.length) * 100) : 0;
 
-  const TODAY = "2026-05-31";
-  const dueList     = scope.filter((r) => r.followUp?.due && r.followUp.due <= "2026-06-07")
+  const TODAY = todayISO();
+  const due7  = isoAddDays(7);
+  const dueList     = scope.filter((r) => r.followUp?.due && r.followUp.due <= due7)
     .sort((a, b) => (a.followUp.due || "").localeCompare(b.followUp.due || ""));
   const overdueList = dueList.filter((r) => r.followUp.due < TODAY);
 
@@ -444,7 +445,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
           grad="linear-gradient(135deg,#0d9488 0%,#0f766e 60%,#065f46 100%)"
           sub={`eGFR เฉลี่ย ${avgEgfr || "--"} mL/min`}
           spark={trend.values}
-          badge={`+${scope.filter((r)=>r.date>="2026-05-01").length} เดือนนี้`}
+          badge={`+${scope.filter((r)=>r.date>=monthStartISO()).length} เดือนนี้`}
           onClick={onGoPatients} />
         <GradKpi stagger={1}
           label="เสี่ยงสูง — ติดตามด่วน" value={riskCounts.high} unit="ราย" icon="🚨"
@@ -794,7 +795,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
 
 /* ── PopulationAnalytics ── */
 function PopulationAnalytics({ scope }) {
-  const today = new Date("2026-05-29");
+  const today = todayDate();
   const monthBuckets = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(today); d.setMonth(d.getMonth() - i);
@@ -960,7 +961,7 @@ function PopulationAnalytics({ scope }) {
 
 /* ── buildTrend ── */
 function buildTrend(records) {
-  const end = new Date("2026-05-29");
+  const end = todayDate();
   const buckets = [];
   for (let i=5;i>=0;i--) {
     const start=new Date(end); start.setDate(end.getDate()-i*7-6);
@@ -1163,7 +1164,7 @@ function DRPRiskAnalysis({ scope, onNavigate }) {
 
   /* ── Section F: Monthly Visit Volume ── */
   const monthlyVolume = React.useMemo(() => {
-    const today = new Date("2026-06-06");
+    const today = todayDate();
     const buckets = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(today); d.setDate(1); d.setMonth(d.getMonth() - i);
