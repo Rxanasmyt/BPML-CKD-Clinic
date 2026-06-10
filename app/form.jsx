@@ -727,6 +727,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       alert(`พบปัญหาด้านยาความเสี่ยงสูง ${unackedHighFindings.length} รายการที่ยังไม่ได้รับทราบ\nกรุณากด "รับทราบ" ในแผงผลวิเคราะห์ DRP ก่อนบันทึก`);
       return;
     }
+    // เตือนค่า lab ผิดปกติก่อนบันทึก (ยืนยันได้ถ้าตั้งใจ)
+    if (labWarnings.length > 0) {
+      const ok = window.confirm(`พบค่าที่อาจผิดปกติ ${labWarnings.length} รายการ:\n\n• ${labWarnings.join("\n• ")}\n\nต้องการบันทึกต่อหรือไม่?`);
+      if (!ok) return;
+    }
     setSaving(true);
     const rec = {
       ...f,
@@ -747,6 +752,34 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   const valid = f.hn.trim() && f.name.trim() && f.ckdStage;
+
+  // ── ตรวจค่า lab/สัญญาณชีพ ที่อยู่นอกช่วงสมเหตุผล (เตือน ไม่บล็อก) ──
+  const labWarnings = React.useMemo(() => {
+    const out = [];
+    const chk = (key, label, min, max, unit) => {
+      const raw = f[key];
+      if (raw === "" || raw == null) return;
+      const v = parseFloat(raw);
+      if (isNaN(v)) { out.push(`${label}: "${raw}" ไม่ใช่ตัวเลข`); return; }
+      if (v < min || v > max) out.push(`${label} ${v}${unit ? " " + unit : ""} อยู่นอกช่วงปกติ (${min}–${max})`);
+    };
+    chk("age", "อายุ", 0, 120, "ปี");
+    chk("scr", "Scr", 0.1, 20, "mg/dL");
+    chk("egfr", "eGFR", 1, 150, "mL/min");
+    chk("k", "K⁺", 1.5, 8.5, "mmol/L");
+    chk("na", "Na⁺", 100, 175, "mmol/L");
+    chk("hb", "Hb", 3, 22, "g/dL");
+    chk("hco3", "HCO₃", 5, 45, "mmol/L");
+    chk("phos", "Phosphate", 0.5, 15, "mg/dL");
+    chk("ca", "Calcium", 4, 16, "mg/dL");
+    chk("bpSys", "BP systolic", 60, 270, "mmHg");
+    chk("bpDia", "BP diastolic", 30, 170, "mmHg");
+    chk("hr", "HR", 25, 230, "/min");
+    // ความสอดคล้อง: systolic ควรมากกว่า diastolic
+    const s = parseFloat(f.bpSys), d = parseFloat(f.bpDia);
+    if (!isNaN(s) && !isNaN(d) && s <= d) out.push(`BP: systolic (${s}) ควรมากกว่า diastolic (${d})`);
+    return out;
+  }, [f.age, f.scr, f.egfr, f.k, f.na, f.hb, f.hco3, f.phos, f.ca, f.bpSys, f.bpDia, f.hr]);
 
   // มีการแก้ไขที่ยังไม่บันทึก (เริ่มนับหลัง interaction แรก, รีเซ็ตเมื่อ save/clear)
   const [dirty, setDirty] = React.useState(false);
@@ -1425,6 +1458,14 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           </button>
         </div>
         {!valid && <div style={{ maxWidth: 1080, margin: "6px auto 0", fontSize: 11.5, color: "#b45309" }}>กรอก HN, ชื่อ-สกุล และเลือก CKD stage เพื่อบันทึก</div>}
+        {valid && labWarnings.length > 0 && (
+          <div style={{ maxWidth: 1080, margin: "8px auto 0", display: "flex", alignItems: "flex-start", gap: 8,
+            fontSize: 11.5, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a",
+            borderRadius: 8, padding: "7px 11px" }}>
+            <span style={{ flexShrink: 0 }}>⚠️</span>
+            <span>ค่าที่ควรตรวจสอบ ({labWarnings.length}): {labWarnings.join(" · ")}</span>
+          </div>
+        )}
       </div>
     </div>
   );

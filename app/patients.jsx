@@ -189,16 +189,37 @@ function PatientCard({ r, onOpen, idx }) {
 function PatientsList({ records, user, onOpenPatient, onNew }) {
   const [q, setQ]       = React.useState("");
   const [riskF, setRiskF] = React.useState("all");
+  const [stageF, setStageF] = React.useState("all");
+  const [dueOnly, setDueOnly] = React.useState(false);
   const [sort, setSort] = React.useState("risk");
   const [view, setView] = React.useState("card"); // card | table
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
   const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
+  const due7  = isoAddDays(7), today = todayISO();
   let rows = [...all];
 
-  if (q.trim()) { const s = q.trim().toLowerCase(); rows = rows.filter((r) => r.name.toLowerCase().includes(s) || (r.hn||"").includes(s)); }
+  if (q.trim()) {
+    const s = q.trim().toLowerCase();
+    rows = rows.filter((r) =>
+      r.name.toLowerCase().includes(s) ||
+      (r.hn || "").includes(s) ||
+      (r.allergy || "").toLowerCase().includes(s) ||
+      ("ckd" + (r.ckdStage || "")).includes(s) ||
+      (r.meds || []).some((m) => (m.drug || "").toLowerCase().includes(s))
+    );
+  }
   if (riskF !== "all") rows = rows.filter((r) => r.risk.band === riskF);
-  rows.sort((a,b) => sort==="risk" ? b.risk.score-a.risk.score : (b.date||"").localeCompare(a.date||""));
+  if (stageF !== "all") rows = rows.filter((r) => r.ckdStage === stageF);
+  if (dueOnly) rows = rows.filter((r) => r.followUp?.due && r.followUp.due <= due7);
+  rows.sort((a, b) => {
+    if (sort === "risk") return b.risk.score - a.risk.score;
+    if (sort === "date") return (b.date || "").localeCompare(a.date || "");
+    if (sort === "egfr") return (parseFloat(a.egfr) || 999) - (parseFloat(b.egfr) || 999); // ต่ำสุดก่อน (แย่สุด)
+    if (sort === "name") return (a.name || "").localeCompare(b.name || "", "th");
+    return 0;
+  });
+  const dueCount = all.filter((r) => r.followUp?.due && r.followUp.due <= due7).length;
 
   const riskCounts = { high:0, medium:0, low:0 };
   all.forEach((r) => riskCounts[r.risk.band]++);
@@ -219,7 +240,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
           <h1 style={{ fontSize:"clamp(20px,2.4vw,27px)", fontWeight:800, color:"var(--ink)", margin:0 }}>
             ผู้ป่วยทั้งหมด
           </h1>
-          <p style={{ color:"var(--ink-2)", fontSize:14, margin:"6px 0 0" }}>{all.length} ราย</p>
+          <p style={{ color:"var(--ink-2)", fontSize:14, margin:"6px 0 0" }}>{rows.length === all.length ? `${all.length} ราย` : `แสดง ${rows.length} จาก ${all.length} ราย`}</p>
         </div>
         <button onClick={onNew} className="btn-primary"
           style={{ ...primaryBtn, background:"linear-gradient(135deg,var(--brand),var(--brand-deep))",
@@ -253,7 +274,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
           <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}>
             <Icon name="search" size={17} color="var(--ink-2)" />
           </span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาด้วยชื่อ หรือ HN"
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหา ชื่อ / HN / ยา / แพ้ยา / stage"
             style={{ ...inS, paddingLeft:38, height:42 }} />
         </div>
         <div style={{ display:"flex", gap:6 }}>
@@ -261,10 +282,23 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
             <button key={k} onClick={() => setRiskF(k)} style={segBtn2(riskF===k, k)}>{t}</button>
           ))}
         </div>
+        <select value={stageF} onChange={(e) => setStageF(e.target.value)}
+          style={{ ...inS, width:"auto", height:42, cursor:"pointer" }}>
+          <option value="all">ทุก stage</option>
+          {CKD_STAGES.map((s) => <option key={s} value={s}>CKD {s}</option>)}
+        </select>
+        <button onClick={() => setDueOnly((v) => !v)}
+          style={{ ...inS, width:"auto", height:42, cursor:"pointer", display:"flex", alignItems:"center", gap:6,
+            background: dueOnly ? "#fffbeb" : "var(--surface)", borderColor: dueOnly ? "#fcd34d" : "var(--border)",
+            color: dueOnly ? "#b45309" : "var(--ink-2)", fontWeight: dueOnly ? 700 : 500, fontFamily:"var(--sans)" }}>
+          📅 นัดใกล้ถึง{dueCount > 0 && <span style={{ fontFamily:"var(--mono)", fontWeight:800 }}>{dueCount}</span>}
+        </button>
         <select value={sort} onChange={(e) => setSort(e.target.value)}
           style={{ ...inS, width:"auto", height:42, cursor:"pointer" }}>
           <option value="risk">เรียงตามความเสี่ยง</option>
           <option value="date">เรียงตามวันที่ล่าสุด</option>
+          <option value="egfr">เรียงตาม eGFR (ต่ำสุดก่อน)</option>
+          <option value="name">เรียงตามชื่อ (ก–ฮ)</option>
         </select>
         {/* View toggle */}
         <div style={{ display:"flex", border:"1px solid var(--border)", borderRadius:9, overflow:"hidden" }}>
