@@ -217,15 +217,32 @@ function App() {
 
   function updateCurrentUser(u) { setUser(u); localStorage.setItem(AUTH_KEY, JSON.stringify(u)); }
   function login(u) { updateCurrentUser(u); setRoute({ view: "dashboard" }); }
-  function logout() { setUser(null); localStorage.removeItem(AUTH_KEY); }
+  function logout(reason) {
+    setUser(null);
+    localStorage.removeItem(AUTH_KEY);
+    if (reason === "idle" && window.showToast) window.showToast("ออกจากระบบอัตโนมัติเพื่อความปลอดภัย (ไม่มีการใช้งาน 20 นาที)", "info", "หมดเวลาเซสชัน");
+  }
+
+  /* --- Auto-logout เมื่อไม่มีการใช้งาน 20 นาที (PDPA: กันข้อมูลผู้ป่วยค้างจอ) --- */
+  const IDLE_MS = 20 * 60 * 1000;
+  React.useEffect(() => {
+    if (!user) return;
+    let timer = null;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => logout("idle"), IDLE_MS); };
+    const events = ["mousedown", "keydown", "touchstart", "scroll", "visibilitychange"];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, reset)); };
+  }, [user?.id]);
 
   // sync ชื่อ/ข้อมูล user ปัจจุบันจาก Firestore อัตโนมัติ
   React.useEffect(() => {
     if (!user) return;
     const unsub = FirebaseUserStore.listen((users) => {
       const updated = users.find((u) => u.id === user.id);
-      if (updated && (updated.name !== user.name || updated.pin !== user.pin || updated.license !== user.license || updated.role !== user.role)) {
-        updateCurrentUser(updated);
+      if (updated && (updated.name !== user.name || updated.pinHash !== user.pinHash || updated.license !== user.license || updated.role !== user.role)) {
+        const { pin: _p, ...safe } = updated; // ไม่เก็บ plaintext pin ใน state/localStorage
+        updateCurrentUser(safe);
       }
     });
     return () => unsub && unsub();

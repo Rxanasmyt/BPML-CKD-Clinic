@@ -22,8 +22,8 @@ function UserForm({ initial, currentUser, onDone, onCancel }) {
   const isNew = !initial;
   const [name, setName] = React.useState(initial?.name || "");
   const [username, setUsername] = React.useState(initial?.username || "");
-  const [pin, setPin] = React.useState(initial?.pin || "");
-  const [pin2, setPin2] = React.useState(initial?.pin || "");
+  const [pin, setPin] = React.useState("");
+  const [pin2, setPin2] = React.useState("");
   const [license, setLicense] = React.useState(initial?.license || "");
   const [role, setRole] = React.useState(initial?.role || "pharmacist");
   const [err, setErr] = React.useState("");
@@ -33,11 +33,13 @@ function UserForm({ initial, currentUser, onDone, onCancel }) {
     if (!name.trim()) { setErr("กรุณากรอกชื่อ"); return; }
     if (!username.trim()) { setErr("กรุณากรอกชื่อผู้ใช้"); return; }
     if (!/^[a-z0-9_]+$/.test(username.trim())) { setErr("ชื่อผู้ใช้ใช้ได้เฉพาะ a-z, 0-9, _"); return; }
-    if (pin.length < 4) { setErr("PIN ต้องมีอย่างน้อย 4 หลัก"); return; }
+    if (isNew && pin.length < 4) { setErr("PIN ต้องมีอย่างน้อย 4 หลัก"); return; }
+    if (pin && pin.length < 4) { setErr("PIN ต้องมีอย่างน้อย 4 หลัก"); return; }
     if (pin !== pin2) { setErr("PIN ทั้งสองช่องไม่ตรงกัน"); return; }
     setSaving(true);
     try {
-      const u = { ...(initial || {}), name: name.trim(), username: username.trim().toLowerCase(), pin, license: license.trim(), role };
+      const u = { ...(initial || {}), name: name.trim(), username: username.trim().toLowerCase(), license: license.trim(), role };
+      if (pin) u.pin = pin; // ตั้ง/เปลี่ยน PIN เฉพาะเมื่อกรอก (เว้นว่าง = ใช้ PIN เดิม)
       await FirebaseUserStore.save(u);
       onDone(u);
     } catch (e) {
@@ -73,8 +75,8 @@ function UserForm({ initial, currentUser, onDone, onCancel }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <MLabel>{isNew ? "PIN (4–6 หลัก)" : "PIN ใหม่"}</MLabel>
-            <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+            <MLabel>{isNew ? "PIN (4–6 หลัก)" : "PIN ใหม่ (เว้นว่าง = เดิม)"}</MLabel>
+            <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin} placeholder={isNew ? "" : "••••"} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} />
           </div>
           <div>
             <MLabel>ยืนยัน PIN</MLabel>
@@ -103,13 +105,14 @@ function ChangePinModal({ user, onClose, onUpdated }) {
   const [saving, setSaving] = React.useState(false);
 
   async function submit() {
-    if (oldPin !== user.pin) { setErr("PIN เดิมไม่ถูกต้อง"); return; }
     if (pin.length < 4) { setErr("PIN ใหม่ต้องมีอย่างน้อย 4 หลัก"); return; }
     if (pin !== pin2) { setErr("PIN ใหม่ทั้งสองช่องไม่ตรงกัน"); return; }
     setSaving(true);
     try {
-      const updated = { ...user, pin };
-      await FirebaseUserStore.save(updated);
+      // ตรวจ PIN เดิมผ่าน auth (รองรับทั้ง hash และ legacy plaintext)
+      const verified = await FirebaseUserStore.auth(user.username, oldPin);
+      if (!verified) { setErr("PIN เดิมไม่ถูกต้อง"); setSaving(false); return; }
+      const updated = await FirebaseUserStore.save({ ...user, pin });
       setOk(true);
       setTimeout(() => { onUpdated(updated); onClose(); }, 1200);
     } catch (e) {

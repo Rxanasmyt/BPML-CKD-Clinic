@@ -158,6 +158,17 @@ const USERS = [];
 const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 function fmtDate(s) { if (!s) return "–"; const d = new Date(s); if (isNaN(d)) return s; return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`; }
 
+/* ── PIN hashing (SHA-256 + salt ผ่าน Web Crypto) — ไม่เก็บ PIN เป็น plaintext ── */
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function hashPin(pin, salt) { return _sha256Hex(`pharm-ckd:${salt}:${pin}`); }
+function randomSalt() {
+  const a = new Uint8Array(16); crypto.getRandomValues(a);
+  return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /* ── Date helpers — แหล่งเดียวสำหรับ "วันนี้" ทั้งระบบ (แทนวันที่ hardcode) ── */
 function todayDate() { return new Date(); }                                   // Date object ของวันนี้จริง
 function todayISO() { const d = new Date(); const off = d.getTimezoneOffset(); return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10); } // "YYYY-MM-DD" ตามเวลาท้องถิ่น
@@ -168,4 +179,5 @@ Object.assign(window, {
   SOURCE_OPTIONS, DRP_OPTIONS, drpOption, drpLabel, INTERVENTION_OPTIONS,
   CKD_STAGES, computeRisk, RISK_META, Store, USERS,
   TH_MONTHS, fmtDate, todayDate, todayISO, isoAddDays, monthStartISO,
+  hashPin, randomSalt,
 });

@@ -10,6 +10,22 @@ let _pendingCount = 0;
 function _setPending(n) { if (n !== _pendingCount) { _pendingCount = n; window.dispatchEvent(new CustomEvent("offline-queue-changed", { detail: { count: n } })); } }
 window.OfflineQueue = { getCount: () => _pendingCount };
 
+/* ---- PIN security helpers (ใช้ร่วมทั้ง Local/Real user store) ---- */
+async function _prepUserForSave(u) {
+  // แปลง PIN plaintext (จากฟอร์ม) → pinHash/pinSalt; ไม่เก็บ plaintext ไม่ว่ากรณีใด
+  const out = { ...u };
+  if (typeof out.pin === "string" && out.pin.length > 0) {
+    out.pinSalt = window.randomSalt();
+    out.pinHash = await window.hashPin(out.pin, out.pinSalt);
+  }
+  delete out.pin;
+  return out;
+}
+async function _verifyUser(u, pin) {
+  if (u.pinHash && u.pinSalt) return (await window.hashPin(pin, u.pinSalt)) === u.pinHash;
+  return u.pin != null && u.pin === pin; // legacy plaintext (ก่อน migrate)
+}
+
 function _buildLocalStores() {
   // Simple localStorage user store (used before Firebase loads)
   const LS_USERS = "pharm_ckd_users_v1";
@@ -28,13 +44,21 @@ function _buildLocalStores() {
     async auth(un, pin) {
       const list = getLocalUsers();
       const u = list.find((x) => x.username === un.trim().toLowerCase());
-      return u && u.pin === pin ? u : null;
+      if (!u || !(await _verifyUser(u, pin))) return null;
+      if (!u.pinHash) { // migrate legacy plaintext → hash
+        const salt = window.randomSalt();
+        u.pinHash = await window.hashPin(pin, salt); u.pinSalt = salt; delete u.pin;
+        const i = list.findIndex((x) => x.id === u.id);
+        if (i >= 0) { list[i] = u; saveLocalUsers(list); }
+      }
+      const { pin: _p, ...safe } = u; return safe;
     },
     async save(u) {
+      const prepared = await _prepUserForSave(u);
       const list = getLocalUsers();
-      const i = list.findIndex((x) => x.id === u.id);
-      if (i >= 0) list[i] = u; else list.push(u);
-      saveLocalUsers(list); return u;
+      const i = list.findIndex((x) => x.id === prepared.id);
+      if (i >= 0) list[i] = prepared; else list.push(prepared);
+      saveLocalUsers(list); return prepared;
     },
     async remove(id) { saveLocalUsers(getLocalUsers().filter((x) => x.id !== id)); },
     async seed() {},
@@ -152,18 +176,28 @@ function _loadScript(src) {
       try {
         const snap = await db.collection(COLL_USR)
           .where("username", "==", username.trim().toLowerCase()).limit(1).get();
-        if (!snap.empty) {
-          const u = { ...snap.docs[0].data(), id: snap.docs[0].id };
-          return u.pin === pin ? u : null;
+        if (snap.empty) return null;
+        const u = { ...snap.docs[0].data(), id: snap.docs[0].id };
+        if (!(await _verifyUser(u, pin))) return null;
+        if (!u.pinHash) { // migrate legacy plaintext → hash (best-effort)
+          const salt = window.randomSalt();
+          const pinHash = await window.hashPin(pin, salt);
+          await db.collection(COLL_USR).doc(u.id).set(
+            { pinHash, pinSalt: salt, pin: firebase.firestore.FieldValue.delete() },
+            { merge: true }
+          ).catch(() => {});
+          u.pinHash = pinHash; u.pinSalt = salt;
         }
+        const { pin: _p, ...safe } = u; return safe;
       } catch (e) { /* fall through */ }
       return null;
     },
     async save(u) {
       if (!u.id) u.id = "u" + Date.now();
       u.updatedAt = new Date().toISOString();
-      await db.collection(COLL_USR).doc(u.id).set(u);
-      return u;
+      const prepared = await _prepUserForSave(u);
+      await db.collection(COLL_USR).doc(prepared.id).set(prepared);
+      return prepared;
     },
     async remove(id) { await db.collection(COLL_USR).doc(id).delete(); },
     async seed() {
