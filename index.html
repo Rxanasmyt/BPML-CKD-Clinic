@@ -324,7 +324,10 @@
 <script src="vendor/react.js"></script>
 <script src="vendor/react-dom.js"></script>
 <script src="vendor/babel.min.js"></script>
-<!-- Firebase SDK loaded dynamically in firebase.jsx with timeout fallback -->
+<!-- Firebase SDK loaded dynamically in firebase.jsx — Auth SDK preloaded for faster login -->
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
 
 <script type="text/babel" src="app/drug_db.jsx"></script>
 <script type="text/babel" src="app/herb_db.jsx"></script>

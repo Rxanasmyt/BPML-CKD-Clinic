@@ -2,51 +2,38 @@ rules_version = '2';
 
 // =============================================================================
 // Firestore Security Rules — BPML CKD Clinic
-// =============================================================================
+// ใช้ Firebase Authentication (email/password) → request.auth ไม่เป็น null
+// เมื่อ user login สำเร็จ
 //
-// ⚠️ อ่านก่อน deploy! สถานะปัจจุบันของแอป:
+// วิธี deploy:
+//   firebase deploy --only firestore:rules
 //
-// แอปนี้ "ไม่ได้" ใช้ Firebase Authentication — มันยืนยันตัวตนผ่าน collection
-// `pharm_ckd_users` (เก็บ PIN แบบ hash) ด้วยตรรกะฝั่ง client เอง
-//
-// ผลคือ: Firestore ไม่มี `request.auth` ให้ใช้ตรวจสิทธิ์ ดังนั้น rules
-// "ไม่สามารถ" แยกแยะผู้ใช้จริงจากใครก็ตามที่มี config ของโปรเจกต์ได้
-// (config ฝังอยู่ในหน้าเว็บ = เปิดเผยต่อสาธารณะโดยธรรมชาติ)
-//
-// 👉 สำหรับข้อมูลผู้ป่วยจริง (PDPA) ต้องเลือกหนึ่งในนี้ก่อนใช้งานจริง:
-//
-//   ทางเลือก A (แนะนำ): เพิ่ม Firebase Authentication (email/password หรือ
-//   anonymous) แล้วเปลี่ยน login flow ให้ sign-in กับ Firebase ก่อน จากนั้น
-//   ใช้ OPTION A ด้านล่าง (require request.auth != null)
-//
-//   ทางเลือก B (ชั่วคราว): เปิด Firebase App Check + จำกัด domain ที่
-//   authorized ใน Firebase Console เพื่อกันการเรียกจากนอกแอป — ช่วยลด
-//   ความเสี่ยงแต่ "ไม่ใช่" การควบคุมสิทธิ์ที่แท้จริง
-//
-// วิธี deploy:  firebase deploy --only firestore:rules
+// หมายเหตุ: rules นี้กัน unauthorized read/write จากนอกแอป
+// แต่ไม่แยก role (admin/pharmacist) ระดับ DB — role enforcement
+// ทำใน client logic (settings.jsx, app.jsx)
 // =============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------------------------------------------------------------------
-    // OPTION A — ใช้เมื่อ migrate ไป Firebase Auth แล้ว (แนะนำ)
-    // ปลดคอมเมนต์บล็อกนี้ และลบ OPTION B ออก
-    // ---------------------------------------------------------------------
-    // match /pharm_ckd_records/{doc}    { allow read, write: if request.auth != null; }
-    // match /pharm_ckd_users/{doc}      { allow read, write: if request.auth != null; }
-    // match /pharm_ckd_delete_log/{doc} { allow read, write: if request.auth != null; }
+    // ข้อมูลผู้ป่วย — เข้าถึงได้เฉพาะ user ที่ login ผ่าน Firebase Auth แล้ว
+    match /pharm_ckd_records/{doc} {
+      allow read, write: if request.auth != null;
+    }
 
-    // ---------------------------------------------------------------------
-    // OPTION B — สถานะปัจจุบัน (ยังไม่มี Firebase Auth)
-    // ⚠️ เปิดให้อ่าน/เขียนได้โดยไม่ตรวจสิทธิ์ — ใช้ได้เฉพาะกับ App Check +
-    //    authorized domains เท่านั้น และไม่เหมาะกับข้อมูลผู้ป่วยระยะยาว
-    // ---------------------------------------------------------------------
-    match /pharm_ckd_records/{doc}    { allow read, write: if true; }
-    match /pharm_ckd_users/{doc}      { allow read, write: if true; }
-    match /pharm_ckd_delete_log/{doc} { allow read, write: if true; }
+    // บัญชีผู้ใช้ — เข้าถึงได้เฉพาะ user ที่ login
+    match /pharm_ckd_users/{doc} {
+      allow read, write: if request.auth != null;
+    }
 
-    // ปฏิเสธ collection อื่นทั้งหมดโดย default
-    match /{document=**} { allow read, write: if false; }
+    // audit log การลบ — เข้าถึงได้เฉพาะ user ที่ login
+    match /pharm_ckd_delete_log/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ปฏิเสธ collection อื่นทั้งหมด
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

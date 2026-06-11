@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pharm-ckd-v40';
+const CACHE_NAME = 'pharm-ckd-v41';
 const ASSETS = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   '/vendor/react-dom.js',
   '/vendor/babel.min.js',
   '/vendor/firebase-app-compat.js',
+  '/vendor/firebase-auth-compat.js',
   '/vendor/firebase-firestore-compat.js',
   '/app/drug_db.jsx',
   '/app/herb_db.jsx',

@@ -109,14 +109,26 @@ function ChangePinModal({ user, onClose, onUpdated }) {
     if (pin !== pin2) { setErr("PIN ใหม่ทั้งสองช่องไม่ตรงกัน"); return; }
     setSaving(true);
     try {
-      // ตรวจ PIN เดิมผ่าน auth (รองรับทั้ง hash และ legacy plaintext)
-      const verified = await FirebaseUserStore.auth(user.username, oldPin);
-      if (!verified) { setErr("PIN เดิมไม่ถูกต้อง"); setSaving(false); return; }
+      // ตรวจสอบ PIN เดิมก่อนผ่าน Firebase Auth re-authentication
+      const email = `${user.username}@pharm-ckd.internal`;
+      const credential = firebase.auth.EmailAuthProvider.credential(email, oldPin);
+      const fbUser = firebase.auth().currentUser;
+      if (!fbUser) { setErr("กรุณา login ใหม่ก่อนเปลี่ยน PIN"); setSaving(false); return; }
+      try {
+        await fbUser.reauthenticateWithCredential(credential);
+      } catch (e) {
+        setErr("PIN เดิมไม่ถูกต้อง"); setSaving(false); return;
+      }
+      // อัปเดต Firebase Auth password
+      await fbUser.updatePassword(pin);
+      // อัปเดต Firestore user doc (PIN hash)
       const updated = await FirebaseUserStore.save({ ...user, pin });
+      // อัปเดต re-auth cache
+      window._adminReauthCreds = { email, pin };
       setOk(true);
       setTimeout(() => { onUpdated(updated); onClose(); }, 1200);
     } catch (e) {
-      setErr("บันทึกไม่สำเร็จ: " + e.message);
+      setErr("บันทึกไม่สำเร็จ: " + (e.message || e.code));
     }
     setSaving(false);
   }

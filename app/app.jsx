@@ -94,7 +94,24 @@ function App() {
   const { toasts, show: showToast } = useToast();
   React.useEffect(() => { window.showToast = showToast; }, [showToast]);
 
-  const [user, setUser] = React.useState(() => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; } });
+  // Firebase Auth session — user profile loaded from Firestore on auth state change
+  const [user, setUser] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch (e) { return null; }
+  });
+
+  // ฟัง Firebase Auth state — เมื่อ token หมดอายุหรือ logout จากเครื่องอื่น → logout อัตโนมัติ
+  React.useEffect(() => {
+    function onAuthState(e) {
+      const { firebaseUser } = e.detail;
+      if (!firebaseUser && user) {
+        // Firebase session หมด → logout เงียบๆ
+        setUser(null);
+        localStorage.removeItem(AUTH_KEY);
+      }
+    }
+    window.addEventListener("firebase-auth-state", onAuthState);
+    return () => window.removeEventListener("firebase-auth-state", onAuthState);
+  }, [user?.id]);
   const [records, setRecords] = React.useState([]);
   const [route, setRoute] = React.useState({ view: "dashboard" });
 
@@ -220,6 +237,8 @@ function App() {
   function logout(reason) {
     setUser(null);
     localStorage.removeItem(AUTH_KEY);
+    // Firebase Auth sign-out — ทำให้ Firestore rules ปฏิเสธ request ทันที
+    try { firebase.auth().signOut(); } catch (e) {}
     if (reason === "idle" && window.showToast) window.showToast("ออกจากระบบอัตโนมัติเพื่อความปลอดภัย (ไม่มีการใช้งาน 20 นาที)", "info", "หมดเวลาเซสชัน");
   }
 

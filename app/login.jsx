@@ -65,13 +65,26 @@ function LoginScreen({ onLogin }) {
     }
     setLoading(true); setErr("");
     try {
+      // เก็บ credentials ชั่วคราวเพื่อ re-authenticate admin หลังสร้างบัญชีใหม่
+      window._adminReauthCreds = { email: `${username.trim().toLowerCase()}@pharm-ckd.internal`, pin };
       const u = await FirebaseUserStore.auth(username.trim().toLowerCase(), pin);
       if (!u) {
+        delete window._adminReauthCreds;
         setErr("ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง");
         setShake(true); setTimeout(() => setShake(false), 600);
-      } else { onLogin(u); }
-    } catch (err) {
-      setErr("เชื่อมต่อ Firebase ไม่ได้ — กรุณาตรวจสอบอินเทอร์เน็ต");
+      } else {
+        onLogin(u);
+      }
+    } catch (e) {
+      delete window._adminReauthCreds;
+      if (e.code === "auth/user-not-found" || e.code === "auth/wrong-password") {
+        setErr("ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง");
+      } else if (e.code === "auth/network-request-failed") {
+        setErr("เชื่อมต่อ Firebase ไม่ได้ — กรุณาตรวจสอบอินเทอร์เน็ต");
+      } else {
+        setErr("เกิดข้อผิดพลาด: " + (e.message || e.code));
+      }
+      setShake(true); setTimeout(() => setShake(false), 600);
     }
     setLoading(false);
   }
