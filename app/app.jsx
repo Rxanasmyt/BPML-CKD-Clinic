@@ -333,7 +333,17 @@ function App() {
     page = <PatientDetail hn={route.hn} records={records} user={user} onBack={() => setRoute({ view: "patients" })}
       onEdit={(rec) => setRoute({ view: "form", editing: rec })}
       onDelete={deleteRecord}
-      onNew={(p) => setRoute({ view: "form", editing: { hn: p.hn, name: p.name, age: p.age, ckdStage: p.ckdStage, allergy: p.allergy, date: todayISO(), meds: [], sources: [], drps: [], interventions: [], comparedPrev: false, comparedNew: false, discrepancy: "none", id: undefined } })} />;
+      onNew={(p) => setRoute({ view: "form", editing: {
+        hn: p.hn, name: p.name, age: p.age, sex: p.sex, ckdStage: p.ckdStage,
+        allergy: p.allergy, dm: p.dm, physician: p.physician,
+        // ยกยาเดิม + OTC จาก visit ล่าสุดมาให้ เพื่อทำ reconciliation ไม่ต้องพิมพ์ใหม่ทั้งหมด
+        meds: (p.meds || []).map((m) => JSON.parse(JSON.stringify(m))),
+        otcItems: (p.otcItems || []).map((o) => JSON.parse(JSON.stringify(o))),
+        otcHerbal: p.otcHerbal || false, otcDetail: p.otcDetail || "",
+        sources: [], drps: [], interventions: [],
+        comparedPrev: false, comparedNew: false, discrepancy: "none",
+        date: todayISO(), _carriedFromVisit: p.date || true, id: undefined,
+      } })} />;
   else if (route.view === "settings")
     page = user.role === "admin"
       ? <SettingsPage currentUser={user} onUserUpdated={updateCurrentUser} />

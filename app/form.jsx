@@ -416,13 +416,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const DRAFT_KEY = "pharm_ckd_form_draft_v1";
 
   const [f, setF] = React.useState(() => {
-    // ถ้าเป็น edit ใช้ initial, ถ้าเป็น new ให้ดู draft ก่อน
-    if (initial?.id) return JSON.parse(JSON.stringify(initial));
-    try {
-      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
-      if (draft && draft._savedAt) return draft;
-    } catch(e) {}
-    return {
+    const blank = {
       hn: "", name: "", age: "", sex: "male", ckdStage: "", date: new Date().toISOString().slice(0,10), scr: "", egfr: "", k: "", na: "",
       hb: "", hco3: "", phos: "", ca: "", uacr: "", dm: false,
       bpSys: "", bpDia: "", hr: "", allergy: "", sources: [], sourceOther: "",
@@ -431,6 +425,18 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       interventions: [], counselingNote: "", outcome: "", outcomeReason: "", physician: "",
       pharmacist: user.name, pharmacistId: user.id, time: "", followUp: null,
     };
+    // edit visit เดิม → ใช้ initial ทั้งหมด
+    if (initial?.id) return JSON.parse(JSON.stringify(initial));
+    // visit ใหม่ที่ยกข้อมูลผู้ป่วย/ยาเดิมมาให้ (กดจาก "บันทึกครั้งใหม่") → ใช้ seed ทับ blank
+    if (initial && (initial.hn || initial._carriedFromVisit)) {
+      return { ...blank, ...JSON.parse(JSON.stringify(initial)), pharmacist: user.name, pharmacistId: user.id };
+    }
+    // new เปล่า → กู้ draft ที่ค้างไว้ถ้ามี
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (draft && draft._savedAt) return draft;
+    } catch(e) {}
+    return blank;
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const toggle = (k, val) => setF((p) => ({ ...p, [k]: (p[k] || []).includes(val) ? p[k].filter((x) => x !== val) : [...(p[k] || []), val] }));
@@ -740,6 +746,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
       drpFindings: drpFindings,  // full audit trail of the analysis
     };
     if (!rec.createdBy) rec.createdBy = user.id;
+    delete rec._carriedFromVisit;
     rec.meds = rec.meds.filter((m) => m.drug.trim());
     rec.meds.forEach((m) => RecentDrugs.record(m.drug));
     clearDraft();
@@ -1124,6 +1131,16 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         <div ref={el => sectionRefs.current['2'] = el}>
         <FSection n="3" title="รายการยาที่ถูกต้องและเป็นปัจจุบันที่สุด" en="Best Possible Medication List" defaultOpen
           badge={f.meds.filter((m) => m.drug).length + " รายการ"}>
+
+          {/* แจ้งว่ายกยาเดิมมาให้แล้ว — เภสัชกรเพียงตรวจทาน/แก้ไขส่วนที่เปลี่ยน */}
+          {f._carriedFromVisit && !initial?.id && (
+            <div style={{ marginBottom: 12, padding: "11px 14px", background: "var(--brand-soft)", border: "1px solid var(--brand)", borderRadius: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>📋</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--brand-deep)", flex: 1 }}>
+                ยกรายการยาเดิม{typeof f._carriedFromVisit === "string" ? ` จาก visit ${fmtDate(f._carriedFromVisit)}` : ""} มาให้แล้ว — โปรดตรวจทานและแก้ไขเฉพาะที่เปลี่ยนแปลง แล้วอัปเดตค่า Lab/สัญญาณชีพของครั้งนี้
+              </span>
+            </div>
+          )}
 
           {/* Feature 1: global allergy warning at top of med section */}
           {hasAnyConflict && (
