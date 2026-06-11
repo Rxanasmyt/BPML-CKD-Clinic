@@ -77,7 +77,9 @@ function LoginScreen({ onLogin }) {
       }
     } catch (e) {
       delete window._adminReauthCreds;
-      if (e.code === "auth/user-not-found" || e.code === "auth/wrong-password") {
+      if (e.code === "auth/user-not-found") {
+        setErr("บัญชีนี้ยังไม่ได้ migrate — ติดต่อแอดมินให้สร้าง Auth Account ใน Settings");
+      } else if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential") {
         setErr("ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง");
       } else if (e.code === "auth/network-request-failed") {
         setErr("เชื่อมต่อ Firebase ไม่ได้ — กรุณาตรวจสอบอินเทอร์เน็ต");

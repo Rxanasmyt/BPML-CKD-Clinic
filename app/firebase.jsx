@@ -117,14 +117,11 @@ const FirebaseUserStore = {
   },
 
   // login: Firebase Auth sign-in → ดึง Firestore user doc
+  // throws Firebase Auth errors so caller can show specific messages
   async auth(username, pin) {
     const email = _toEmail(username);
-    try {
-      await _auth.signInWithEmailAndPassword(email, pin);
-    } catch (e) {
-      // Firebase Auth ปฏิเสธ → credentials ผิด
-      return null;
-    }
+    // let Auth errors propagate — caller handles error codes
+    await _auth.signInWithEmailAndPassword(email, pin);
     // Auth สำเร็จ → ดึง profile จาก Firestore
     try {
       const snap = await _db.collection(COLL_USR)

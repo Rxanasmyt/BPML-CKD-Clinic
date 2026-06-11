@@ -161,6 +161,66 @@ function ChangePinModal({ user, onClose, onUpdated }) {
   );
 }
 
+/* ---------- MigrateAuthModal — สร้าง Firebase Auth account ให้ user เดิม ---------- */
+function MigrateAuthModal({ user, onClose, onDone }) {
+  const [pin, setPin] = React.useState("");
+  const [pin2, setPin2] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [ok, setOk] = React.useState(false);
+
+  async function submit() {
+    if (pin.length < 4) { setErr("PIN ต้องมีอย่างน้อย 4 หลัก"); return; }
+    if (pin !== pin2) { setErr("PIN ทั้งสองช่องไม่ตรงกัน"); return; }
+    setSaving(true);
+    try {
+      await FirebaseUserStore.save({ ...user, pin });
+      setOk(true);
+      setTimeout(() => { onDone(); onClose(); }, 1400);
+    } catch (e) {
+      setErr("สร้างไม่สำเร็จ: " + (e.message || e.code));
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Modal title={`ตั้ง PIN ให้ @${user.username}`} onClose={onClose}>
+      {ok ? (
+        <div style={{ textAlign: "center", padding: "20px 0", color: "#16a34a" }}>
+          <Icon name="check" size={36} color="#16a34a" /><br />
+          <strong style={{ fontSize: 16, display: "block", marginTop: 10 }}>สร้าง Auth Account สำเร็จ!</strong>
+          <span style={{ fontSize: 13, color: "var(--ink-2)" }}>ผู้ใช้สามารถ login ได้แล้ว</span>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 14, padding: "10px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 9, fontSize: 13, color: "#92400e" }}>
+            ตั้ง PIN เริ่มต้นให้ <strong>{user.name}</strong> เพื่อให้ login ได้ ผู้ใช้สามารถเปลี่ยน PIN เองได้ในภายหลัง
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <MLabel>PIN เริ่มต้น (4–6 หลัก)</MLabel>
+              <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin}
+                onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+            </div>
+            <div>
+              <MLabel>ยืนยัน PIN</MLabel>
+              <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin2}
+                onChange={(e) => { setPin2(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+            </div>
+            {err && <div style={{ color: "#b91c1c", background: "#fef2f2", border: "1px solid #fca5a5", padding: "9px 12px", borderRadius: 9, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}><Icon name="alert" size={14} />{err}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+            <button onClick={onClose} style={{ flex: 1, ...mGhostBtn }} disabled={saving}>ยกเลิก</button>
+            <button onClick={submit} disabled={saving} style={{ flex: 2, ...mPrimaryBtn, opacity: saving ? .7 : 1 }}>
+              <Icon name="shield" size={16} color="#fff" />{saving ? "กำลังสร้าง..." : "สร้าง Auth Account"}
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 /* ---------- AiSettingsSection — จัดการ Claude API Key ---------- */
 function AiSettingsSection() {
   const [key, setKey] = React.useState(() => localStorage.getItem("pharm_ckd_claude_key") || "");
@@ -272,30 +332,45 @@ function SettingsPage({ currentUser, onUserUpdated }) {
           กำลังโหลดจาก Firebase...
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {users.map((u) => (
-            <div key={u.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: u.role === "admin" ? "#fef3c7" : "var(--brand-soft)", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <Icon name={u.role === "admin" ? "shield" : "user"} size={22} color={u.role === "admin" ? "#b45309" : "var(--brand-deep)"} />
-              </div>
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 15.5, color: "var(--ink)" }}>{u.name}</div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", marginTop: 3, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <span>@{u.username}</span>
-                  {u.license && <span>· {u.license}</span>}
-                  <span style={{ padding: "2px 9px", borderRadius: 99, fontSize: 11.5, fontWeight: 600, background: u.role === "admin" ? "#fef3c7" : "var(--brand-soft)", color: u.role === "admin" ? "#b45309" : "var(--brand-deep)" }}>{u.role === "admin" ? "หัวหน้า/แอดมิน" : "เภสัชกร"}</span>
-                  {u.id === currentUser.id && <span style={{ padding: "2px 9px", borderRadius: 99, fontSize: 11.5, fontWeight: 600, background: "#f0fdf4", color: "#16a34a" }}>บัญชีของฉัน</span>}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setModal({ type: "edit", u })} style={mGhostBtn}><Icon name="edit" size={15} />แก้ไข</button>
-                {u.id !== currentUser.id && (
-                  <button onClick={() => setModal({ type: "delete", u })} style={{ ...mGhostBtn, color: "#b91c1c", borderColor: "#fca5a5" }}><Icon name="x" size={15} />ลบ</button>
-                )}
-              </div>
+        <>
+          {users.filter((u) => !u._email).length > 0 && (
+            <div style={{ padding: "12px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 12, fontSize: 13, color: "#92400e", display: "flex", gap: 10, alignItems: "center", marginBottom: 4 }}>
+              <Icon name="alert" size={16} color="#b45309" />
+              <div><strong>{users.filter((u) => !u._email).length} บัญชี</strong> ยังไม่ได้ migrate ไป Firebase Auth — กดปุ่ม <strong>ตั้ง PIN</strong> เพื่อเปิดใช้งาน</div>
             </div>
-          ))}
-        </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {users.map((u) => {
+              const needsMigrate = !u._email;
+              return (
+                <div key={u.id} style={{ background: "var(--surface)", border: `1px solid ${needsMigrate ? "#fcd34d" : "var(--border)"}`, borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: u.role === "admin" ? "#fef3c7" : "var(--brand-soft)", display: "grid", placeItems: "center", flexShrink: 0 }}>
+                    <Icon name={u.role === "admin" ? "shield" : "user"} size={22} color={u.role === "admin" ? "#b45309" : "var(--brand-deep)"} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15.5, color: "var(--ink)" }}>{u.name}</div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", marginTop: 3, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span>@{u.username}</span>
+                      {u.license && <span>· {u.license}</span>}
+                      <span style={{ padding: "2px 9px", borderRadius: 99, fontSize: 11.5, fontWeight: 600, background: u.role === "admin" ? "#fef3c7" : "var(--brand-soft)", color: u.role === "admin" ? "#b45309" : "var(--brand-deep)" }}>{u.role === "admin" ? "หัวหน้า/แอดมิน" : "เภสัชกร"}</span>
+                      {u.id === currentUser.id && <span style={{ padding: "2px 9px", borderRadius: 99, fontSize: 11.5, fontWeight: 600, background: "#f0fdf4", color: "#16a34a" }}>บัญชีของฉัน</span>}
+                      {needsMigrate && <span style={{ padding: "2px 9px", borderRadius: 99, fontSize: 11.5, fontWeight: 600, background: "#fffbeb", color: "#b45309" }}>⚠ ยังไม่ได้ migrate</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {needsMigrate && (
+                      <button onClick={() => setModal({ type: "migrate", u })} style={{ ...mGhostBtn, color: "#b45309", borderColor: "#fcd34d", background: "#fffbeb" }}><Icon name="shield" size={15} />ตั้ง PIN</button>
+                    )}
+                    <button onClick={() => setModal({ type: "edit", u })} style={mGhostBtn}><Icon name="edit" size={15} />แก้ไข</button>
+                    {u.id !== currentUser.id && (
+                      <button onClick={() => setModal({ type: "delete", u })} style={{ ...mGhostBtn, color: "#b91c1c", borderColor: "#fca5a5" }}><Icon name="x" size={15} />ลบ</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <div style={{ marginTop: 24, padding: "16px 20px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 13, color: "var(--ink-2)", display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -307,6 +382,9 @@ function SettingsPage({ currentUser, onUserUpdated }) {
       <AiSettingsSection />
 
 
+      {modal?.type === "migrate" && (
+        <MigrateAuthModal user={modal.u} onClose={() => setModal(null)} onDone={() => setModal(null)} />
+      )}
       {modal?.type === "add" && (
         <Modal title="เพิ่มบัญชีใหม่" onClose={() => setModal(null)}>
           <UserForm isNew currentUser={currentUser} onDone={() => setModal(null)} onCancel={() => setModal(null)} />
