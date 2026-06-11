@@ -16,7 +16,7 @@ function ConfirmDeleteModal({ rec, onConfirm, onCancel }) {
           </div>
           <div>
             <div style={{ fontSize:17, fontWeight:700, color:"var(--ink)" }}>ยืนยันการลบ Visit</div>
-            <div style={{ fontSize:13, color:"var(--ink-2)", marginTop:2 }}>การลบไม่สามารถกู้คืนได้ แต่มี audit log บันทึกไว้</div>
+            <div style={{ fontSize:13, color:"var(--ink-2)", marginTop:2 }}>มี audit log เก็บ snapshot ไว้ — กู้คืนได้ภายหลังที่หน้า "ประวัติการลบข้อมูล" (แอดมิน)</div>
           </div>
         </div>
         <div style={{ background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:10, padding:"12px 14px", marginBottom:18, fontSize:13.5 }}>
@@ -48,6 +48,8 @@ function DeleteLogPage() {
   const [logs, setLogs] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [expanded, setExpanded] = React.useState(null);
+  const [restoring, setRestoring] = React.useState(null);
+  const [restoredIds, setRestoredIds] = React.useState({});
   React.useEffect(() => {
     if (!window.db) { setLoading(false); return; }
     window.db.collection("pharm_ckd_delete_log").orderBy("deletedAt","desc").limit(200)
@@ -56,6 +58,25 @@ function DeleteLogPage() {
         setLoading(false);
       }).catch(() => setLoading(false));
   }, []);
+
+  // #1: กู้คืน Visit จาก snapshot — เขียนข้อมูลกลับเข้า Firestore
+  async function restore(log) {
+    if (!log.snapshot || !window.FirebaseStore) return;
+    let rec;
+    try { rec = JSON.parse(log.snapshot); } catch (e) { return; }
+    if (!window.confirm(`กู้คืน Visit ของ ${log.patientName} (HN ${log.hn}) วันที่ ${log.visitDate} กลับเข้าระบบ?`)) return;
+    setRestoring(log.id);
+    try {
+      await window.FirebaseStore.save(rec);
+      // ลบ entry ออกจาก audit log เมื่อกู้คืนสำเร็จ เพื่อไม่ให้กู้ซ้ำ
+      if (window.db) await window.db.collection("pharm_ckd_delete_log").doc(log.id).delete().catch(() => {});
+      setRestoredIds((p) => ({ ...p, [log.id]: true }));
+      if (window.showToast) window.showToast(`กู้คืน Visit ของ ${log.patientName} สำเร็จ`, "success", "กู้คืนแล้ว ✓");
+    } catch (e) {
+      if (window.showToast) window.showToast("กู้คืนไม่สำเร็จ: " + e.message, "error", "เกิดข้อผิดพลาด");
+    }
+    setRestoring(null);
+  }
   return (
     <div style={{ padding:"clamp(18px,2.4vw,30px)", maxWidth:860, margin:"0 auto" }}>
       <div style={{ marginBottom:20 }}>
@@ -86,7 +107,17 @@ function DeleteLogPage() {
               </div>
               {expanded === log.id && log.snapshot && (
                 <div style={{ borderTop:"1px solid var(--border)", padding:"12px 18px", background:"var(--bg)" }}>
-                  <div style={{ fontSize:12.5, fontWeight:600, color:"var(--ink-2)", marginBottom:8 }}>ข้อมูล Visit ที่ถูกลบ (snapshot)</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8, flexWrap:"wrap" }}>
+                    <div style={{ fontSize:12.5, fontWeight:600, color:"var(--ink-2)", flex:1 }}>ข้อมูล Visit ที่ถูกลบ (snapshot)</div>
+                    {restoredIds[log.id] ? (
+                      <span style={{ fontSize:12.5, fontWeight:700, color:"#16a34a" }}>✓ กู้คืนแล้ว</span>
+                    ) : (
+                      <button onClick={() => restore(log)} disabled={restoring === log.id}
+                        style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"7px 14px", border:"none", borderRadius:9, background: restoring===log.id ? "#86efac" : "#16a34a", color:"#fff", fontSize:13, fontWeight:700, cursor: restoring===log.id ? "wait":"pointer", fontFamily:"var(--sans)" }}>
+                        <Icon name="check" size={14} color="#fff" />{restoring === log.id ? "กำลังกู้คืน..." : "กู้คืน Visit นี้"}
+                      </button>
+                    )}
+                  </div>
                   <pre style={{ fontSize:11, color:"var(--ink-2)", fontFamily:"var(--mono)", whiteSpace:"pre-wrap", wordBreak:"break-all", margin:0, maxHeight:240, overflowY:"auto" }}>{JSON.stringify(JSON.parse(log.snapshot), null, 2)}</pre>
                 </div>
               )}

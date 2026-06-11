@@ -1,4 +1,7 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": ".",
     "ignore": [
@@ -8,7 +11,8 @@
       "**/.claude/**",
       "**/node_modules/**",
       "README.md",
-      "**/*.md"
+      "**/*.md",
+      "firestore.rules"
     ],
     "cleanUrls": true,
     "headers": [

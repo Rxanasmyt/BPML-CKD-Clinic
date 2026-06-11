@@ -280,6 +280,13 @@ function App() {
   }
 
   async function saveRecord(rec) {
+    // #2: ป้องกัน race condition — อย่าบันทึกลง localStorage เครื่องเดียวก่อน Firestore เชื่อมต่อ
+    // window.db ถูกตั้งค่าเมื่อ Firestore พร้อมเท่านั้น; ถ้ายังไม่พร้อม การบันทึกจะไม่ sync และอาจถูกล้างทิ้ง
+    if (!window.db) {
+      showToast("ยังเชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณารอสักครู่แล้วลองใหม่ (ข้อมูลจะไม่ถูกบันทึกจนกว่าจะเชื่อมต่อได้)", "error", "ยังเชื่อมต่อไม่ได้");
+      setSyncState("error");
+      return;
+    }
     setSyncState("syncing");
     try {
       const time = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
