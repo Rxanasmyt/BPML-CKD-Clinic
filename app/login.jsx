@@ -66,7 +66,7 @@ function LoginScreen({ onLogin }) {
     setLoading(true); setErr("");
     try {
       // เก็บ credentials ชั่วคราวเพื่อ re-authenticate admin หลังสร้างบัญชีใหม่
-      window._adminReauthCreds = { email: `${username.trim().toLowerCase()}@pharm-ckd.internal`, pin };
+      window._adminReauthCreds = { email: `${username.trim().toLowerCase()}@pharmckd.app`, pin };
       const u = await FirebaseUserStore.auth(username.trim().toLowerCase(), pin);
       if (!u) {
         delete window._adminReauthCreds;

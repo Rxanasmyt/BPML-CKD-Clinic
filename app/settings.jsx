@@ -110,7 +110,7 @@ function ChangePinModal({ user, onClose, onUpdated }) {
     setSaving(true);
     try {
       // ตรวจสอบ PIN เดิมก่อนผ่าน Firebase Auth re-authentication
-      const email = `${user.username}@pharm-ckd.internal`;
+      const email = `${user.username}@pharmckd.app`;
       const credential = firebase.auth.EmailAuthProvider.credential(email, oldPin);
       const fbUser = firebase.auth().currentUser;
       if (!fbUser) { setErr("กรุณา login ใหม่ก่อนเปลี่ยน PIN"); setSaving(false); return; }

@@ -105,7 +105,7 @@ const FirebaseStore = {
 
 // แปลง username → email ภายใน (ผู้ใช้ไม่เห็น)
 function _toEmail(username) {
-  return `${username.trim().toLowerCase()}@pharm-ckd.internal`;
+  return `${username.trim().toLowerCase()}@pharmckd.app`;
 }
 
 const FirebaseUserStore = {
