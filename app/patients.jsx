@@ -1371,12 +1371,16 @@ function MedTimelineCard({ history }) {
 /* ---------- รายละเอียด + ประวัติ ---------- */
 function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const history = records.filter((r) => r.hn === hn).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  if (!history.length) return <div style={{ padding: 40 }}>ไม่พบข้อมูล</div>;
-  const cur = history[0];
-  const risk = computeRisk(cur);
-  const [selId, setSelId] = React.useState(cur.id);
+  const [selId, setSelId] = React.useState(() => history[0]?.id || null);
   const [activeTab, setActiveTab] = React.useState("detail");
   const [printOpen, setPrintOpen] = React.useState(false);
+
+  // A3: navigate back when all visits are deleted (must be before any conditional return)
+  React.useEffect(() => { if (!history.length) onBack && onBack(); }, [history.length]);
+
+  if (!history.length) return null;
+  const cur = history[0];
+  const risk = computeRisk(cur);
   const [aiOpen, setAiOpen] = React.useState(false);
   const [lineOpen, setLineOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
@@ -1408,16 +1412,21 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
             </div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--ink-2)", marginTop: 5 }}>HN {cur.hn} · {cur.age} ปี · <StageInline stage={cur.ckdStage} /> · {history.length} ครั้งที่บันทึก</div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={() => setAiOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>🤖 สรุป AI สำหรับแพทย์</button>
-            <button onClick={() => setLineOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 14px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>💬 LINE / SMS</button>
-            <button onClick={() => setPrintOpen(true)} style={ghostBtn}><Icon name="download" size={15} />พิมพ์ / PDF</button>
-            <button onClick={() => onEdit(rec)} style={ghostBtn}><Icon name="edit" size={15} />แก้ไข</button>
-            <button onClick={() => setDeleteTarget(rec)}
-              style={{ ...ghostBtn, color:"#dc2626", borderColor:"#fca5a5" }}>
-              <Icon name="x" size={15} color="#dc2626" />ลบ Visit นี้
-            </button>
-            <button onClick={() => onNew(cur)} style={primaryBtn}><Icon name="plus" size={16} color="#fff" />บันทึกครั้งใหม่</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            {/* แถวบน: actions หลัก */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={() => setAiOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>🤖 AI สรุป</button>
+              <button onClick={() => setLineOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>💬 LINE</button>
+              <button onClick={() => onNew(cur)} style={{ ...primaryBtn, whiteSpace: "nowrap" }}><Icon name="plus" size={15} color="#fff" />Visit ใหม่</button>
+            </div>
+            {/* แถวล่าง: secondary actions */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={() => setPrintOpen(true)} style={ghostBtn}><Icon name="download" size={14} />PDF</button>
+              <button onClick={() => onEdit(rec)} style={ghostBtn}><Icon name="edit" size={14} />แก้ไข</button>
+              <button onClick={() => setDeleteTarget(rec)} style={{ ...ghostBtn, color:"#dc2626", borderColor:"#fca5a5" }}>
+                <Icon name="x" size={14} color="#dc2626" />ลบ Visit
+              </button>
+            </div>
           </div>
         </div>
 

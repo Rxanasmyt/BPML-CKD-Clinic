@@ -704,7 +704,10 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:"var(--ink)", whiteSpace:"nowrap",
                     overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</div>
-                  <div style={{ fontSize:11, color:"var(--ink-2)" }}>{r.followUp.note}</div>
+                  <div style={{ fontSize:11, color:"var(--ink-2)", display:"flex", gap:6, alignItems:"center", marginTop:1, flexWrap:"wrap" }}>
+                    <span style={{ fontFamily:"var(--mono)", background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:4, padding:"1px 5px" }}>HN {r.hn}</span>
+                    {r.followUp.note && <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.followUp.note}</span>}
+                  </div>
                 </div>
                 <div style={{ textAlign:"right", flexShrink:0 }}>
                   <div style={{ fontSize:11.5, fontWeight:700, color:col }}>{fmtDate(r.followUp.due)}</div>

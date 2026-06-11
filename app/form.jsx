@@ -441,14 +441,15 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const toggle = (k, val) => setF((p) => ({ ...p, [k]: (p[k] || []).includes(val) ? p[k].filter((x) => x !== val) : [...(p[k] || []), val] }));
 
-  // Autosave draft (new records only, not edits)
-  const [draftSaved, setDraftSaved] = React.useState(false);
+  // Autosave draft — เฉพาะฟอร์มเปล่า (ไม่ใช่ edit และไม่ใช่ carry-over จาก visit ก่อน)
+  const isCarriedSeed = !!(initial && !initial.id && (initial.hn || initial._carriedFromVisit));
+  const [draftSavedAt, setDraftSavedAt] = React.useState(null);
   React.useEffect(() => {
-    if (initial?.id) return; // ไม่ autosave ตอน edit
+    if (initial?.id || isCarriedSeed) return; // ไม่ autosave ตอน edit หรือ carry-over
     const timer = setTimeout(() => {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...f, _savedAt: Date.now() }));
-      setDraftSaved(true);
-      setTimeout(() => setDraftSaved(false), 1500);
+      const ts = Date.now();
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...f, _savedAt: ts }));
+      setDraftSavedAt(ts);
     }, 800);
     return () => clearTimeout(timer);
   }, [f]);
@@ -467,7 +468,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [hnSuggest, setHnSuggest] = React.useState(null);
 
   // Feature 2: track whether eGFR was manually overridden
-  const [egfrManual, setEgfrManual] = React.useState(false);
+  // carry-over seed อาจมี egfr แต่ไม่มี scr → ตั้ง manual=true เพื่อไม่ให้ override ค่า egfr เดิม
+  const [egfrManual, setEgfrManual] = React.useState(() => {
+    if (initial && !initial.id && initial.egfr && !initial.scr) return true;
+    return false;
+  });
   const [egfrAutoVal, setEgfrAutoVal] = React.useState(null);
 
   // Feature 2: auto-compute eGFR with CKD-EPI 2021 whenever scr/age/sex change
@@ -490,6 +495,13 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   // TASK 3: detect contradiction between entered stage and eGFR-calculated stage
   const egfrStage = React.useMemo(() => normStage(ckdStageFromEgfr(f.egfr)), [f.egfr]);
   const stageContradiction = !!(f.ckdStage && egfrStage && f.ckdStage !== egfrStage);
+
+  // C1: auto-recalculate age when visit date changes (if DOB is stored)
+  React.useEffect(() => {
+    if (!f.dob) return;
+    const age = Math.floor((new Date(f.date || new Date()) - new Date(f.dob)) / 31557600000);
+    if (age >= 0 && age <= 130) setF((p) => ({ ...p, age: String(age) }));
+  }, [f.date, f.dob]);
 
   // Feature 3 + 5: copy from last visit modal state
   const [copyModalVisit, setCopyModalVisit] = React.useState(null);
@@ -725,6 +737,12 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [saved, setSaved] = React.useState(false);
 
   function save() {
+    // B1: mark attempted save so required fields show red
+    if (!valid) {
+      setTriedSave(true);
+      scrollToStep("1");
+      return;
+    }
     // TASK 1: block save if HIGH findings are not acknowledged
     if (unackedHighFindings.length > 0) {
       setActiveStep("4");
@@ -760,6 +778,12 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   }
   const valid = f.hn.trim() && f.name.trim() && f.ckdStage;
 
+  // B1: track whether user tried to save (to show required-field errors)
+  const [triedSave, setTriedSave] = React.useState(false);
+  const missingHn   = triedSave && !f.hn.trim();
+  const missingName = triedSave && !f.name.trim();
+  const missingStage = triedSave && !f.ckdStage;
+
   // ── ตรวจค่า lab/สัญญาณชีพ ที่อยู่นอกช่วงสมเหตุผล (เตือน ไม่บล็อก) ──
   const labWarnings = React.useMemo(() => {
     const out = [];
@@ -788,8 +812,8 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     return out;
   }, [f.age, f.scr, f.egfr, f.k, f.na, f.hb, f.hco3, f.phos, f.ca, f.bpSys, f.bpDia, f.hr]);
 
-  // มีการแก้ไขที่ยังไม่บันทึก (เริ่มนับหลัง interaction แรก, รีเซ็ตเมื่อ save/clear)
-  const [dirty, setDirty] = React.useState(false);
+  // มีการแก้ไขที่ยังไม่บันทึก — carry-over seed ถือว่า dirty ทันที
+  const [dirty, setDirty] = React.useState(() => isCarriedSeed);
   const firstRender = React.useRef(true);
   React.useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
@@ -907,11 +931,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           action={<button onClick={handleCancel} style={ghostBtn}><Icon name="x" size={16} />ยกเลิก</button>}
         />
 
-        {/* Draft autosave indicator */}
-        {!initial?.id && draftSaved && (
+        {/* C3: Draft autosave indicator with timestamp */}
+        {!initial?.id && !isCarriedSeed && draftSavedAt && (
           <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#16a34a", marginBottom:8, animation:"fadeIn 0.2s ease-out both" }}>
             <span style={{ width:7, height:7, borderRadius:"50%", background:"#16a34a", flexShrink:0 }} />
-            บันทึก draft อัตโนมัติแล้ว
+            บันทึก draft อัตโนมัติ เวลา {new Date(draftSavedAt).toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}
           </div>
         )}
 
@@ -943,9 +967,31 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         <div ref={el => sectionRefs.current['1'] = el}>
         <FSection n="1" title="ข้อมูลผู้ป่วย" en="Patient Information" defaultOpen lockOpen>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,160px) 1fr 90px", gap: 12, alignItems: "start" }} className="pinfo-row">
-            <FloatInput label="HN" value={f.hn} onChange={(e) => onHnChange(e.target.value)} placeholder="66xxxxx" />
-            <FloatInput label="ชื่อ-สกุล" value={f.name} onChange={(e) => set("name", e.target.value)} />
-            <FloatInput label="อายุ" unit="ปี" value={f.age} onChange={(e) => set("age", e.target.value)} inputMode="numeric" />
+            <div>
+              <FloatInput label="HN *" value={f.hn} onChange={(e) => { onHnChange(e.target.value); setTriedSave(false); }} placeholder="66xxxxx"
+                style={{ outline: missingHn ? "2px solid #dc2626" : undefined, borderRadius: 10 }} />
+              {missingHn && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 3, fontWeight: 600 }}>⚠ กรุณากรอก HN</div>}
+            </div>
+            <div>
+              <FloatInput label="ชื่อ-สกุล *" value={f.name} onChange={(e) => { set("name", e.target.value); setTriedSave(false); }}
+                style={{ outline: missingName ? "2px solid #dc2626" : undefined, borderRadius: 10 }} />
+              {missingName && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 3, fontWeight: 600 }}>⚠ กรุณากรอกชื่อ-สกุล</div>}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <FloatInput label="อายุ" unit="ปี" value={f.age} onChange={(e) => set("age", e.target.value)} inputMode="numeric" />
+              {/* C1: DOB → auto age */}
+              {f.dob ? (
+                <div style={{ fontSize: 10.5, color: "var(--brand-deep)", fontWeight: 600, paddingLeft: 2 }}>
+                  เกิด {f.dob}
+                  <button type="button" onClick={() => set("dob", "")} style={{ marginLeft: 6, border: "none", background: "none", color: "var(--ink-2)", cursor: "pointer", fontSize: 11, padding: 0 }}>✕</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => { const d = prompt("วันเกิด (YYYY-MM-DD):"); if (!d) return; const age = Math.floor((new Date(f.date || new Date()) - new Date(d)) / 31557600000); if (age >= 0 && age <= 130) { set("dob", d); set("age", String(age)); } }}
+                  style={{ fontSize: 10.5, color: "var(--ink-2)", background: "none", border: "1px dashed var(--border)", borderRadius: 6, padding: "2px 7px", cursor: "pointer", textAlign: "left", fontFamily: "var(--sans)" }}>
+                  + ใส่วันเกิด
+                </button>
+              )}
+            </div>
           </div>
 
           {/* HN suggest banner */}
@@ -971,9 +1017,10 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
 
           <div style={{ marginTop: 12 }}>
             <Field label="CKD stage" req>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {missingStage && <div style={{ fontSize: 11, color: "#dc2626", marginBottom: 6, fontWeight: 600 }}>⚠ กรุณาเลือก CKD Stage</div>}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", outline: missingStage ? "2px solid #dc2626" : undefined, borderRadius: 10, padding: missingStage ? 4 : 0 }}>
                 {CKD_STAGES.map((s) => (
-                  <button key={s} type="button" onClick={() => set("ckdStage", s)}
+                  <button key={s} type="button" onClick={() => { set("ckdStage", s); setTriedSave(false); }}
                     style={{ flex: "1 1 60px", maxWidth: 110, padding: "10px 0", border: `1px solid ${f.ckdStage === s ? "var(--brand)" : "var(--border)"}`, background: f.ckdStage === s ? "var(--brand)" : "var(--surface)", color: f.ckdStage === s ? "#fff" : "var(--ink-2)", borderRadius: 8, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--mono)" }}>{s}</button>
                 ))}
               </div>
