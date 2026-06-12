@@ -73,16 +73,23 @@ function UserForm({ initial, currentUser, onDone, onCancel }) {
             ))}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <MLabel>{isNew ? "PIN (4–6 หลัก)" : "PIN ใหม่ (เว้นว่าง = เดิม)"}</MLabel>
-            <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin} placeholder={isNew ? "" : "••••"} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+        {(isNew || !initial?._email) ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <MLabel>{isNew ? "PIN (4–6 หลัก)" : "PIN ใหม่ (เว้นว่าง = เดิม)"}</MLabel>
+              <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin} placeholder={isNew ? "" : "••••"} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+            </div>
+            <div>
+              <MLabel>ยืนยัน PIN</MLabel>
+              <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin2} onChange={(e) => { setPin2(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+            </div>
           </div>
-          <div>
-            <MLabel>ยืนยัน PIN</MLabel>
-            <input style={mInS} type="password" inputMode="numeric" maxLength={6} value={pin2} onChange={(e) => { setPin2(e.target.value.replace(/\D/g, "")); setErr(""); }} />
+        ) : (
+          <div style={{ padding: "10px 14px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 12.5, color: "var(--ink-2)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <Icon name="shield" size={14} />
+            <span>เปลี่ยน PIN ของผู้ใช้คนนี้จากที่นี่ไม่ได้ — ให้เจ้าตัว login แล้วเปลี่ยน PIN เองในเมนู "เปลี่ยน PIN ของฉัน" (ระบบความปลอดภัยของ Firebase)</span>
           </div>
-        </div>
+        )}
         {err && <div style={{ color: "#b91c1c", background: "#fef2f2", border: "1px solid #fca5a5", padding: "9px 12px", borderRadius: 9, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}><Icon name="alert" size={14} />{err}</div>}
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 22 }}>

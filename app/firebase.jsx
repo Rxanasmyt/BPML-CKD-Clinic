@@ -208,5 +208,4 @@ window.addEventListener("online", () => {
 localStorage.removeItem("pharm_ckd_records_v1");
 localStorage.removeItem("pharm_ckd_migrated_v1");
 
-console.log("✅ Firebase Auth + Firestore initialized");
 window.dispatchEvent(new CustomEvent("firebase-ready"));

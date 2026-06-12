@@ -295,7 +295,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
 
   const TODAY = todayISO();
   const due7  = isoAddDays(7);
-  const dueList     = scope.filter((r) => r.followUp?.due && r.followUp.due <= due7)
+  const dueList     = latestPerPatient(scope).filter((r) => r.followUp?.due && r.followUp.due <= due7)
     .sort((a, b) => (a.followUp.due || "").localeCompare(b.followUp.due || ""));
   const overdueList = dueList.filter((r) => r.followUp.due < TODAY);
 

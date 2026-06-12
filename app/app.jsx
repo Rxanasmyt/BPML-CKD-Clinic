@@ -337,15 +337,14 @@ function App() {
       <TweakRadio label="ความหนาแน่น" value={t.density} onChange={(v) => setTweak("density", v)}
         options={[{ value: "compact", label: "แน่น" }, { value: "regular", label: "ปกติ" }, { value: "comfy", label: "โปร่ง" }]} />
       <TweakSlider label="ขนาดตัวอักษร" value={t.fontScale} min={85} max={120} step={5} unit="%" onChange={(v) => setTweak("fontScale", v)} />
-      <TweakSection label="ข้อมูลทดลอง" />
-      <TweakButton label="รีเซ็ตข้อมูลตัวอย่าง" onClick={async () => { setSyncState("syncing"); await FirebaseStore.reset(); }} />
     </TweaksPanel>
   );
 
   if (!user) return <><LoginScreen onLogin={login} />{themePanel}</>;
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด (Firestore เป็น single source of truth)
-  const dueFollow = scope.filter((r) => r.followUp && r.followUp.due && r.followUp.due <= isoAddDays(7))
+  // ใช้ visit ล่าสุดต่อผู้ป่วย — กัน follow-up เก่าค้าง + กันนับซ้ำใน badge
+  const dueFollow = latestPerPatient(scope).filter((r) => r.followUp && r.followUp.due && r.followUp.due <= isoAddDays(7))
     .sort((a, b) => (a.followUp.due || "").localeCompare(b.followUp.due || ""));
 
   let page;
@@ -618,12 +617,13 @@ function NavItem({ n, active, onClick, side }) {
 }
 
 function getInitials(name) {
+  if (!name || typeof name !== "string") return "?";
   return name.replace(/^(ภ[ญก]\.|นพ\.|พ[ญก]\.|ดร\.)\s*/,'').trim()
-    .split(/\s+/).slice(0,2).map(w=>w[0]||'').join('');
+    .split(/\s+/).slice(0,2).map(w=>w[0]||'').join('') || "?";
 }
 function avatarColor(name) {
   const palette=['#0d9488','#7c3aed','#0284c7','#d97706','#dc2626','#16a34a','#db2777'];
-  const h = [...name].reduce((a,c)=>a+c.charCodeAt(0),0);
+  const h = [...(name || "?")].reduce((a,c)=>a+c.charCodeAt(0),0);
   return palette[h%palette.length];
 }
 

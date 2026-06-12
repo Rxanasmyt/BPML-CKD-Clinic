@@ -287,7 +287,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
           </h1>
           <p style={{ color:"var(--ink-2)", fontSize:14, margin:"6px 0 0" }}>{rows.length === all.length ? `${all.length} ราย` : `แสดง ${rows.length} จาก ${all.length} ราย`}</p>
         </div>
-        <button onClick={onNew} className="btn-primary"
+        <button className="btn-primary"
           style={{ ...primaryBtn, background:"linear-gradient(135deg,var(--brand),var(--brand-deep))",
             borderRadius:13, boxShadow:"0 4px 16px rgba(13,148,136,.35)", position:"relative", overflow:"hidden" }}
           onClick={(e)=>{ if(window.addRipple)window.addRipple(e); onNew(); }}>

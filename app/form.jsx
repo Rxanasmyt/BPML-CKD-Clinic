@@ -765,7 +765,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
     };
     if (!rec.createdBy) rec.createdBy = user.id;
     delete rec._carriedFromVisit;
-    rec.meds = rec.meds.filter((m) => m.drug.trim());
+    rec.meds = rec.meds.filter((m) => (m.drug || "").trim());
     rec.meds.forEach((m) => RecentDrugs.record(m.drug));
     clearDraft();
     setSaved(true);

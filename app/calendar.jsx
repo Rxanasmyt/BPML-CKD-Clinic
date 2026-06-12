@@ -14,9 +14,10 @@ function FollowUpCalendar({ records, onOpenPatient }) {
   const [viewMonth, setViewMonth] = React.useState(today.getMonth()); // 0-indexed
 
   // Build a map: "YYYY-MM-DD" -> [{ hn, name, due }]
+  // ใช้ visit ล่าสุดของแต่ละผู้ป่วยเท่านั้น — กัน follow-up เก่าค้างในปฏิทิน
   const dueMap = React.useMemo(() => {
     const map = {};
-    records.forEach((r) => {
+    latestPerPatient(records).forEach((r) => {
       if (r.followUp && r.followUp.due) {
         const key = r.followUp.due; // expected "YYYY-MM-DD"
         if (!map[key]) map[key] = [];
@@ -56,13 +57,13 @@ function FollowUpCalendar({ records, onOpenPatient }) {
   }
 
   function chipColor(due) {
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = todayISO();
     if (due < todayStr) return { bg: "#fef2f2", border: "#fca5a5", text: "#b91c1c" };
     if (due === todayStr) return { bg: "#fffbeb", border: "#fcd34d", text: "#92400e" };
     return { bg: "#f0fdfa", border: "#99f6e4", text: "#0f766e" };
   }
 
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = todayISO();
 
   return (
     <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1100, margin: "0 auto" }}>
