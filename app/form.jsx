@@ -240,7 +240,7 @@ const FORM_STEPS = [
   { n: '6', label: 'ผลลัพธ์' },
 ];
 
-function FormProgress({ active, onStepClick }) {
+function FormProgress({ active, onStepClick, fillPct = 0 }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 0,
@@ -250,6 +250,9 @@ function FormProgress({ active, onStepClick }) {
       boxShadow: '0 2px 12px rgba(0,0,0,.07)',
       overflowX: 'auto', position: 'sticky', top: 0, zIndex: 20,
       backdropFilter: 'blur(12px)',
+      /* completion progress bar — rendered as bottom border */
+      borderBottom: 'none',
+      paddingBottom: 16,
     }}>
       {FORM_STEPS.map((s, i) => {
         const done = parseInt(active) > parseInt(s.n);
@@ -297,6 +300,15 @@ function FormProgress({ active, onStepClick }) {
           </React.Fragment>
         );
       })}
+      {/* Completion progress bar */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:4,
+        background:'var(--border)', borderRadius:'0 0 14px 14px', overflow:'hidden' }}>
+        <div style={{ height:'100%', width:`${fillPct}%`,
+          background:'linear-gradient(90deg,var(--brand),var(--brand-deep),#7c3aed)',
+          borderRadius:99,
+          transition:'width 0.55s cubic-bezier(0.34,1.1,0.64,1)',
+          boxShadow:'0 0 10px rgba(13,148,136,.5)' }} />
+      </div>
     </div>
   );
 }
@@ -953,7 +965,13 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
           </div>
         )}
 
-        <FormProgress active={activeStep} onStepClick={scrollToStep} />
+        <FormProgress active={activeStep} onStepClick={scrollToStep}
+          fillPct={Math.round(
+            [f.hn.trim(), f.name.trim(), f.ckdStage, f.egfr, f.k,
+             f.pharmacist, f.date, (f.meds||[]).some(m => m.drug),
+             (f.drps||[]).length > 0 || (f.interventions||[]).length > 0
+            ].filter(Boolean).length / 9 * 100
+          )} />
 
         {/* TASK 4: Previous-visit / Trend panel (appears when HN has prior visits) */}
         {prevVisits.length > 0 && typeof window.PrevVisitPanel === "function" && (

@@ -115,6 +115,17 @@ function App() {
   const [records, setRecords] = React.useState([]);
   const [route, setRoute] = React.useState({ view: "dashboard" });
 
+  /* ── Directional page transitions ── */
+  const NAV_ORDER = ["dashboard","patients","patient","form","calendar","reports","settings","deletelog"];
+  const prevView = React.useRef("dashboard");
+  const [pageDir, setPageDir] = React.useState("forward");
+  React.useEffect(() => {
+    const prev = NAV_ORDER.indexOf(prevView.current);
+    const cur  = NAV_ORDER.indexOf(route.view);
+    setPageDir(cur >= prev ? "forward" : "back");
+    prevView.current = route.view;
+  }, [route.view]);
+
   /* --- PWA install banner --- */
   const [installPrompt, setInstallPrompt] = React.useState(null);
   const [installBanner, setInstallBanner] = React.useState(false);
@@ -473,7 +484,7 @@ function App() {
             </div>
           </div>
         ) : (
-          <div key={route.view+(route.hn||'')} className="page-enter">
+          <div key={route.view+(route.hn||'')} className={pageDir === "back" ? "page-back" : "page-forward"}>
             <PageErrorBoundary resetKey={route.view+(route.hn||'')}>{page}</PageErrorBoundary>
           </div>
         )}

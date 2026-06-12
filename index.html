@@ -21,7 +21,25 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: var(--sans); background: var(--bg, #f1f6f5); -webkit-font-smoothing: antialiased; }
+  body { font-family: var(--sans); background: var(--bg, #f1f6f5); -webkit-font-smoothing: antialiased; position: relative; }
+
+  /* ── #5 Ambient background orbs ── */
+  body::before, body::after {
+    content: ""; position: fixed; pointer-events: none; z-index: 0;
+    border-radius: 50%; filter: blur(90px); opacity: 0.055;
+  }
+  body::before {
+    width: 650px; height: 650px;
+    background: radial-gradient(circle, var(--brand), transparent 68%);
+    top: -180px; right: -180px;
+    animation: ambientOrb1 20s ease-in-out infinite alternate;
+  }
+  body::after {
+    width: 520px; height: 520px;
+    background: radial-gradient(circle, #7c3aed, transparent 68%);
+    bottom: -120px; left: -120px;
+    animation: ambientOrb2 26s ease-in-out infinite alternate;
+  }
   #root { min-height: 100vh; }
   button { font-family: var(--sans); }
   input, select, textarea { font-family: var(--sans); }
@@ -32,6 +50,12 @@
   ::-webkit-scrollbar-thumb { background: #c8d4d2; border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
 
   /* ── Keyframes ── */
+  @keyframes ambientOrb1 { from{transform:translate(0,0) scale(1)} to{transform:translate(-90px,70px) scale(1.22)} }
+  @keyframes ambientOrb2 { from{transform:translate(0,0) scale(1)} to{transform:translate(70px,-90px) scale(1.18)} }
+  @keyframes slideFromRight { from{opacity:0;transform:translateX(28px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes slideFromLeft  { from{opacity:0;transform:translateX(-28px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes revealUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes valFlash { 0%{background:rgba(74,222,128,.28);border-radius:8px} 70%{background:rgba(74,222,128,.08)} 100%{background:transparent} }
   @keyframes fadeUp    { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
   @keyframes fadeIn    { from{opacity:0} to{opacity:1} }
   @keyframes slideRight{ from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
@@ -343,6 +367,20 @@
   .icon-hover { transition: transform 0.16s ease; }
   .icon-hover:hover { transform: translateY(-2px) scale(1.08); }
 
+  /* ── #2 Directional page transitions ── */
+  .page-forward { animation: slideFromRight 0.3s cubic-bezier(0.22,1,0.36,1) both; }
+  .page-back    { animation: slideFromLeft  0.3s cubic-bezier(0.22,1,0.36,1) both; }
+
+  /* ── #1 Scroll-reveal ── */
+  [data-reveal] {
+    opacity: 0; transform: translateY(22px);
+    transition: opacity 0.52s cubic-bezier(0.22,1,0.36,1), transform 0.52s cubic-bezier(0.22,1,0.36,1);
+  }
+  [data-reveal].revealed { opacity: 1; transform: translateY(0); }
+
+  /* ── #6 Real-time value flash ── */
+  .val-flash { animation: valFlash 0.85s ease-out both; }
+
   /* ── เคารพ prefers-reduced-motion: ปิด animation ให้ผู้ใช้ที่ตั้งค่าลดการเคลื่อนไหว ── */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -386,6 +424,19 @@
 <script type="text/babel" src="app/calendar.jsx"></script>
 <script type="text/babel" src="app/reports.jsx"></script>
 <script type="text/babel" src="app/app.jsx"></script>
+<script>
+  /* ── Scroll-reveal: IntersectionObserver watches [data-reveal] elements added by React ── */
+  (function () {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('revealed'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.07, rootMargin: '0px 0px -30px 0px' });
+    new MutationObserver(function () {
+      document.querySelectorAll('[data-reveal]:not(.revealed)').forEach(function (el) { io.observe(el); });
+    }).observe(document.body, { childList: true, subtree: true });
+  })();
+</script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

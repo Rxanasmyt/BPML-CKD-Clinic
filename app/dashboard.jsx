@@ -109,6 +109,17 @@ function GradKpi({ label, value, unit, sub, icon, grad, textColor="#fff", spark,
   const num = useCounter(typeof value === "number" ? value : 0, 800);
   const display = typeof value === "number" ? num : value;
   const delays = [0, 0.04, 0.09, 0.14, 0.20];
+  const prevVal = React.useRef(value);
+  const [flashing, setFlashing] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof value === "number" && prevVal.current !== value && prevVal.current !== 0) {
+      setFlashing(true);
+      const t = setTimeout(() => setFlashing(false), 900);
+      prevVal.current = value;
+      return () => clearTimeout(t);
+    }
+    prevVal.current = value;
+  }, [value]);
   const cardRef = React.useRef(null);
   function handleTilt(e) {
     const el = cardRef.current; if (!el) return;
@@ -141,6 +152,7 @@ function GradKpi({ label, value, unit, sub, icon, grad, textColor="#fff", spark,
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginBottom: 4, position: "relative" }}>
         <span className="num-pop" key={display}
+          className={flashing ? "val-flash" : undefined}
           style={{ fontFamily: "var(--mono)", fontSize: 42, fontWeight: 800, color: textColor, lineHeight: 1,
             textShadow: "0 2px 12px rgba(0,0,0,.2)" }}>
           {display}
@@ -198,19 +210,27 @@ function DonutChart({ segments, center, label }) {
 /* ── Animated Horizontal Bar ── */
 function FancyBar({ label, value, max, color, pct, delay = 0 }) {
   const mounted = useMounted(250 + delay);
+  const [hov, setHov] = React.useState(false);
   const p = pct !== undefined ? pct : max ? Math.round((value / max) * 100) : 0;
   return (
-    <div style={{ marginBottom: 11 }}>
+    <div style={{ marginBottom: 11, cursor: "default" }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-        <span style={{ fontSize: 12.5, color: "var(--ink)", fontWeight: 500 }}>{label}</span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color }}>{value}</span>
+        <span style={{ fontSize: 12.5, color: "var(--ink)", fontWeight: hov ? 600 : 500,
+          transition: "font-weight 0.15s" }}>{label}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color,
+          display: "inline-block", transform: hov ? "scale(1.12)" : "scale(1)",
+          transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1)" }}>{value}</span>
       </div>
-      <div style={{ height: 9, borderRadius: 99, background: "var(--surface-2)", overflow: "hidden" }}>
+      <div style={{ height: hov ? 11 : 9, borderRadius: 99, background: "var(--surface-2)",
+        overflow: "hidden", transition: "height 0.2s ease" }}>
         <div style={{ height: "100%", width: `${mounted ? p : 0}%`,
-          background: `linear-gradient(90deg,${color}88,${color})`,
+          background: hov
+            ? `linear-gradient(90deg,${color}aa,${color},${color}cc)`
+            : `linear-gradient(90deg,${color}88,${color})`,
           borderRadius: 99,
-          transition: `width 0.7s cubic-bezier(0.34,1.1,0.64,1) ${delay}ms`,
-          boxShadow: `0 0 8px ${color}55` }} />
+          transition: `width 0.7s cubic-bezier(0.34,1.1,0.64,1) ${delay}ms, box-shadow 0.2s, background 0.2s`,
+          boxShadow: hov ? `0 0 18px ${color}99, 0 0 5px ${color}` : `0 0 8px ${color}55` }} />
       </div>
     </div>
   );
@@ -484,7 +504,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
       </div>
 
       {/* ── ROW 2: Risk + Stage + Activity ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 16, marginBottom: 16 }} className="dash-grid">
+      <div data-reveal style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 16, marginBottom: 16 }} className="dash-grid">
 
         {/* Risk Distribution */}
         <div className="card-modern stagger stagger-1"
@@ -625,7 +645,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
       )}
 
       {/* ── ROW 3: DRP + Trend + Follow-up ── */}
-      <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 1fr", gap:16, marginBottom:16 }} className="dash-grid">
+      <div data-reveal style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 1fr", gap:16, marginBottom:16 }} className="dash-grid">
 
         {/* DRP Breakdown */}
         <div className="card-modern stagger stagger-4"

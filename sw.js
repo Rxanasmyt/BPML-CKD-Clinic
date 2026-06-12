@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pharm-ckd-v48';
+const CACHE_NAME = 'pharm-ckd-v49';
 const ASSETS = [
   '/',
   '/index.html',
