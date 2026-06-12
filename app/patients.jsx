@@ -51,12 +51,15 @@ function DeleteLogPage() {
   const [restoring, setRestoring] = React.useState(null);
   const [restoredIds, setRestoredIds] = React.useState({});
   React.useEffect(() => {
+    let alive = true;
     if (!window.db) { setLoading(false); return; }
     window.db.collection("pharm_ckd_delete_log").orderBy("deletedAt","desc").limit(200)
       .get().then((snap) => {
+        if (!alive) return;
         setLogs(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
         setLoading(false);
-      }).catch(() => setLoading(false));
+      }).catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, []);
 
   // #1: กู้คืน Visit จาก snapshot — เขียนข้อมูลกลับเข้า Firestore
@@ -153,7 +156,7 @@ function PatientCard({ r, onOpen, idx }) {
   const riskColors = { high:"#dc2626", medium:"#d97706", low:"#16a34a" };
   const riskBg     = { high:"#fef2f2", medium:"#fffbeb", low:"#f0fdf4" };
   const c = riskColors[r.risk.band];
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayISO();
   const overdue = r.followUp && r.followUp.due && r.followUp.due < todayStr;
   const overdueDays = overdue ? Math.round((new Date(todayStr) - new Date(r.followUp.due)) / 86400000) : 0;
 
@@ -367,7 +370,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
       {rows.length ? (
         view === "card" ? (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
-            {rows.map((r, i) => <PatientCard key={r.id} r={r} onOpen={onOpenPatient} idx={i} />)}
+            {rows.map((r, i) => <PatientCard key={r.id || r.hn} r={r} onOpen={onOpenPatient} idx={i} />)}
           </div>
         ) : (
           /* Table view (original) */
@@ -376,7 +379,7 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
               <span>ผู้ป่วย</span><span>ระยะ CKD</span><span>ค่าแล็บ</span><span>ความเสี่ยง</span><span>บันทึกล่าสุด</span><span></span>
             </div>
             {rows.map((r, i) => (
-              <div key={r.id} onClick={() => onOpenPatient(r.hn)} className="prow"
+              <div key={r.id || r.hn} onClick={() => onOpenPatient(r.hn)} className="prow"
                 style={{ display:"grid", gridTemplateColumns:"1.8fr 1fr 1.1fr 1.4fr 1fr 40px", gap:12, padding:"13px 18px",
                   alignItems:"center", borderBottom:"1px solid var(--border)", cursor:"pointer",
                   borderLeft:`3px solid ${r.risk.band==="high"?"#dc2626":r.risk.band==="medium"?"#d97706":"#16a34a"}`,
@@ -814,10 +817,10 @@ function PrintModal({ rec, patient, onClose }) {
 
           {/* Medications */}
           <table style={ptbl}>
-            <thead><tr><th style={pth} colSpan={4}>รายการยา (BPML) — {rec.meds.length} รายการ</th></tr></thead>
+            <thead><tr><th style={pth} colSpan={4}>รายการยา (BPML) — {(rec.meds || []).length} รายการ</th></tr></thead>
             <thead><tr>{["#","ยา / ความแรง","ขนาดที่สั่ง","การกินจริง"].map((h) => <th key={h} style={{ ...pth, background: "#e0f2f1" }}>{h}</th>)}</tr></thead>
             <tbody>
-              {rec.meds.length ? rec.meds.map((m, i) => (
+              {(rec.meds || []).length ? (rec.meds || []).map((m, i) => (
                 <tr key={i}>
                   <td style={{ ...ptd, textAlign: "center", color: "#9ca3af" }}>{i + 1}</td>
                   <td style={ptd}><strong>{m.drug}</strong> {m.strength}</td>
@@ -997,7 +1000,9 @@ function LineReminderModal({ rec, patient, onClose }) {
   const meds = (rec.meds || []).filter((m) => m.drug && m.drug.trim());
   const followUp = patient?.followUp;
   const followDate = followUp?.due ? fmtDate(followUp.due) : null;
-  const hasHighRisk = (rec.drpFindings || []).some((f) => f.level === "HIGH");
+  const hasHighRisk = (typeof window.analyzeDRPs === "function")
+    ? (window.analyzeDRPs(rec).findings || []).some((f) => f.sev === "HIGH")
+    : (rec.drps || []).length > 0;
   const hyperK = parseFloat(rec.k) > 5.5;
 
   const lines = [
@@ -1405,16 +1410,17 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const [selId, setSelId] = React.useState(() => history[0]?.id || null);
   const [activeTab, setActiveTab] = React.useState("detail");
   const [printOpen, setPrintOpen] = React.useState(false);
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const [lineOpen, setLineOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
 
   // A3: navigate back when all visits are deleted (must be before any conditional return)
   React.useEffect(() => { if (!history.length) onBack && onBack(); }, [history.length]);
 
+  // ALL hooks must run before this early return (Rules of Hooks)
   if (!history.length) return null;
   const cur = history[0];
   const risk = computeRisk(cur);
-  const [aiOpen, setAiOpen] = React.useState(false);
-  const [lineOpen, setLineOpen] = React.useState(false);
-  const [deleteTarget, setDeleteTarget] = React.useState(null);
   const rec = history.find((r) => r.id === selId) || cur;
   const rRisk = computeRisk(rec);
 
@@ -1493,6 +1499,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
         ))}
       </div>
 
+      <div key={activeTab} style={{ animation: "fadeUp 0.26s ease-out both" }}>
       {activeTab === "trend" ? (
         <TrendPanel history={history} onSelectVisit={(id) => { setSelId(id); setActiveTab("detail"); }} />
       ) : (
@@ -1530,9 +1537,9 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
             {rec.allergy && rec.allergy !== "-" && <div style={{ marginTop: 12, fontSize: 13, color: "#b91c1c", display: "flex", alignItems: "center", gap: 7 }}><Icon name="alert" size={15} color="#b91c1c" />แพ้ยา/ADR: <strong>{rec.allergy}</strong></div>}
           </DetailCard>
 
-          <DetailCard title={`รายการยา (BPML) · ${rec.meds.length} รายการ`} icon="pill">
-            {rec.meds.length ? rec.meds.map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", borderBottom: i < rec.meds.length - 1 ? "1px solid var(--border)" : "none" }}>
+          <DetailCard title={`รายการยา (BPML) · ${(rec.meds || []).length} รายการ`} icon="pill">
+            {(rec.meds || []).length ? (rec.meds || []).map((m, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", borderBottom: i < (rec.meds || []).length - 1 ? "1px solid var(--border)" : "none" }}>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>{i + 1}.</span>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1574,6 +1581,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
         </div>
       </div>
       )} {/* end activeTab===detail */}
+      </div>
     </div>
   );
 }

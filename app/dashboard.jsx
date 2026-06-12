@@ -1061,14 +1061,14 @@ function DRPRiskAnalysis({ scope, onNavigate }) {
       const egfr = rec.egfr;
       let hasDDI = false, hasDose = false, hasContra = false;
       if (meds.length >= 2) {
-        const ddis = checkDDI(meds);
+        const ddis = checkDDI(meds.map((m) => m.drug));
         if (ddis.some((d) => d.severity === "major")) hasDDI = true;
       }
       meds.forEach((m) => {
-        if (!m.name) return;
-        const da = checkDoseAdjustment(m.name, egfr);
+        if (!m.drug) return;
+        const da = checkDoseAdjustment(m.drug, egfr);
         if (da) hasDose = true;
-        const cc = checkContraindicated(m.name, egfr);
+        const cc = checkContraindicated(m.drug, egfr);
         if (cc && cc.level === "contraindicated") hasContra = true;
       });
       if (hasDDI) ddiCount++;
@@ -1085,7 +1085,7 @@ function DRPRiskAnalysis({ scope, onNavigate }) {
       const meds = rec.meds || [];
       const egfr = rec.egfr;
       if (meds.length >= 2) {
-        const ddis = checkDDI(meds);
+        const ddis = checkDDI(meds.map((m) => m.drug));
         ddis.filter((d) => d.severity === "major").forEach((d) => {
           [d.drugA, d.drugB].forEach((name) => {
             if (!name) return;
@@ -1096,18 +1096,18 @@ function DRPRiskAnalysis({ scope, onNavigate }) {
         });
       }
       meds.forEach((m) => {
-        if (!m.name) return;
-        const da = checkDoseAdjustment(m.name, egfr);
+        if (!m.drug) return;
+        const da = checkDoseAdjustment(m.drug, egfr);
         if (da) {
-          if (!tally[m.name]) tally[m.name] = { count: 0, types: new Set() };
-          tally[m.name].count++;
-          tally[m.name].types.add("ปรับขนาด");
+          if (!tally[m.drug]) tally[m.drug] = { count: 0, types: new Set() };
+          tally[m.drug].count++;
+          tally[m.drug].types.add("ปรับขนาด");
         }
-        const cc = checkContraindicated(m.name, egfr);
+        const cc = checkContraindicated(m.drug, egfr);
         if (cc && cc.level === "contraindicated") {
-          if (!tally[m.name]) tally[m.name] = { count: 0, types: new Set() };
-          tally[m.name].count++;
-          tally[m.name].types.add("ห้ามใช้");
+          if (!tally[m.drug]) tally[m.drug] = { count: 0, types: new Set() };
+          tally[m.drug].count++;
+          tally[m.drug].types.add("ห้ามใช้");
         }
       });
     });

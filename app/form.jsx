@@ -737,6 +737,7 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
   const [saved, setSaved] = React.useState(false);
 
   function save() {
+    if (saving) return; // A5: กันกดบันทึกซ้ำ (Enter + click พร้อมกัน) ที่ทำให้เกิด record ซ้ำ
     // B1: mark attempted save so required fields show red
     if (!valid) {
       setTriedSave(true);
