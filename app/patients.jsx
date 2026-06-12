@@ -188,9 +188,21 @@ function PatientCard({ r, onOpen, idx }) {
   const todayStr = todayISO();
   const overdue = r.followUp && r.followUp.due && r.followUp.due < todayStr;
   const overdueDays = overdue ? Math.round((new Date(todayStr) - new Date(r.followUp.due)) / 86400000) : 0;
+  const cardRef = React.useRef(null);
+  function handleTilt(e) {
+    const el = cardRef.current; if (!el) return;
+    const { left, top, width, height } = el.getBoundingClientRect();
+    const x = (e.clientX - left) / width - 0.5;
+    const y = (e.clientY - top) / height - 0.5;
+    el.style.transform = `perspective(700px) rotateX(${(-y * 6).toFixed(2)}deg) rotateY(${(x * 6).toFixed(2)}deg) scale(1.012) translateZ(0)`;
+  }
+  function resetTilt() {
+    if (cardRef.current) cardRef.current.style.transform = "";
+  }
 
   return (
-    <div onClick={() => onOpen(r.hn)} className="card-modern card-lift"
+    <div ref={cardRef} onMouseMove={handleTilt} onMouseLeave={resetTilt}
+      onClick={() => onOpen(r.hn)} className="card-modern card-lift card-tilt"
       style={{ background:"var(--surface)", borderRadius:16, overflow:"hidden",
         cursor:"pointer", display:"flex",
         animation:`slideInCard 0.45s cubic-bezier(0.22,1,0.36,1) ${Math.min(idx*0.05,0.4)}s both`,
@@ -1620,15 +1632,40 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
         </div>}
       </div>
 
-      {/* Tab switcher */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap:"wrap" }}>
-        {[["detail","รายละเอียด","list"],["trend","แนวโน้ม & เปรียบเทียบ","trend"],["timeline","ประวัติการแทรกแซง","clock"]].map(([v,t,ic]) => (
-          <button key={v} onClick={() => setActiveTab(v)} style={{ display:"flex",alignItems:"center",gap:8,padding:"9px 18px",borderRadius:10,border:`1px solid ${activeTab===v?"var(--brand)":"var(--border)"}`,background:activeTab===v?"var(--brand)":"var(--surface)",color:activeTab===v?"#fff":"var(--ink-2)",fontSize:14,fontWeight:activeTab===v?700:500,cursor:"pointer",fontFamily:"var(--sans)" }}>
-            <Icon name={ic} size={16} color={activeTab===v?"#fff":"currentColor"} />{t}
-            {v==="trend" && history.length>1 && <span style={{background:activeTab===v?"rgba(255,255,255,.3)":"var(--brand-soft)",color:activeTab===v?"#fff":"var(--brand-deep)",fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:99}}>{history.length} visits</span>}
-          </button>
-        ))}
-      </div>
+      {/* Tab switcher with sliding indicator */}
+      {(() => {
+        const tabs = [["detail","รายละเอียด","list"],["trend","แนวโน้ม & เปรียบเทียบ","trend"],["timeline","ประวัติการแทรกแซง","clock"]];
+        const activeIdx = tabs.findIndex(([v]) => v === activeTab);
+        const pct = 100 / tabs.length;
+        return (
+          <div className="tab-slide-wrap" style={{ display:"flex", gap:0, marginBottom:14,
+            background:"var(--surface-2)", borderRadius:13, padding:4 }}>
+            <div className="tab-slide-pill" style={{
+              width:`calc(${pct}% - 2.7px)`,
+              transform:`translateX(calc(${activeIdx} * (100% + ${4/tabs.length}px)))`,
+              left:4,
+            }} />
+            {tabs.map(([v,t,ic]) => (
+              <button key={v} onClick={() => setActiveTab(v)}
+                style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:7,
+                  padding:"9px 12px", borderRadius:9, border:"none", background:"transparent",
+                  color: activeTab===v ? "var(--brand-deep)" : "var(--ink-2)",
+                  fontSize:13.5, fontWeight: activeTab===v ? 700 : 500,
+                  cursor:"pointer", fontFamily:"var(--sans)", position:"relative", zIndex:1,
+                  transition:"color 0.2s" }}>
+                <Icon name={ic} size={15} color={activeTab===v?"var(--brand)":"currentColor"} />{t}
+                {v==="trend" && history.length>1 && (
+                  <span style={{ background: activeTab===v ? "var(--brand-soft)" : "var(--border)",
+                    color: activeTab===v ? "var(--brand-deep)" : "var(--ink-2)",
+                    fontSize:10.5, fontWeight:700, padding:"1px 6px", borderRadius:99 }}>
+                    {history.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       <div key={activeTab} style={{ animation: "fadeUp 0.26s ease-out both" }}>
       {activeTab === "trend" ? (

@@ -109,8 +109,18 @@ function GradKpi({ label, value, unit, sub, icon, grad, textColor="#fff", spark,
   const num = useCounter(typeof value === "number" ? value : 0, 800);
   const display = typeof value === "number" ? num : value;
   const delays = [0, 0.04, 0.09, 0.14, 0.20];
+  const cardRef = React.useRef(null);
+  function handleTilt(e) {
+    const el = cardRef.current; if (!el) return;
+    const { left, top, width, height } = el.getBoundingClientRect();
+    const x = (e.clientX - left) / width - 0.5;
+    const y = (e.clientY - top) / height - 0.5;
+    el.style.transform = `perspective(800px) rotateX(${(-y * 5).toFixed(2)}deg) rotateY(${(x * 5).toFixed(2)}deg) scale(1.018) translateZ(0)`;
+  }
+  function resetTilt() { if (cardRef.current) cardRef.current.style.transform = ""; }
   return (
-    <div onClick={(e)=>{ if(onClick){addRipple(e);onClick();} }} className={`kpi-grad card-modern btn-primary`}
+    <div ref={cardRef} onMouseMove={handleTilt} onMouseLeave={resetTilt}
+      onClick={(e)=>{ if(onClick){addRipple(e);onClick();} }} className={`kpi-grad card-modern btn-primary card-tilt`}
       style={{ background: grad, borderRadius: 20, padding: "22px 24px", cursor: onClick?"pointer":"default",
         position: "relative", overflow: "hidden", border: "none", minHeight: 138,
         animation: `fadeUp 0.42s cubic-bezier(0.22,1,0.36,1) ${delays[stagger]||0}s both` }}>
