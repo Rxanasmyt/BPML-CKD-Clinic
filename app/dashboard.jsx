@@ -1055,6 +1055,8 @@ function PageHead({ title, sub, action }) {
 function Kpi({ label, value, unit, icon, tone, sub, onClick }) {
   const tones = { danger:"#dc2626", ok:"#16a34a", warn:"#d97706" };
   const c = tones[tone] || "var(--brand)";
+  const num = useCounter(typeof value === "number" ? value : 0, 800);
+  const display = typeof value === "number" ? num : value;
   return (
     <div className="card-modern" onClick={onClick}
       style={{ background:"var(--surface)", borderRadius:14, padding:"18px 20px",
@@ -1066,7 +1068,7 @@ function Kpi({ label, value, unit, icon, tone, sub, onClick }) {
         </span>
       </div>
       <div style={{ display:"flex", alignItems:"baseline", gap:6, marginTop:10 }}>
-        <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:700, color:"var(--ink)", lineHeight:1 }}>{value}</span>
+        <span style={{ fontFamily:"var(--mono)", fontSize:32, fontWeight:700, color:"var(--ink)", lineHeight:1 }}>{display}</span>
         <span style={{ fontSize:14, color:"var(--ink-2)" }}>{unit}</span>
       </div>
       {sub && <div style={{ fontSize:12, color:"var(--ink-2)", marginTop:5 }}>{sub}</div>}

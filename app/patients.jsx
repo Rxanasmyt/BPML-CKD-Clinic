@@ -151,6 +151,35 @@ function EmptyIllustration({ text, sub }) {
   );
 }
 
+/* ── eGFR Arc Ring ── */
+function EgfrRing({ egfr, warn }) {
+  const val   = parseFloat(egfr);
+  const valid = !isNaN(val);
+  const pct   = valid ? Math.min(val / 120, 1) : 0;
+  const size  = 52, sw = 4, r = (size - sw) / 2;
+  const circ  = 2 * Math.PI * r;
+  const color = warn ? "#dc2626" : val >= 60 ? "#0d9488" : val >= 30 ? "#d97706" : "#dc2626";
+  return (
+    <div style={{ flex:"0 0 52px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      background:"var(--surface-2)", borderRadius:9, border:`1px solid ${warn?"#fca5a5":"var(--border)"}`, padding:"4px 0 2px" }}>
+      <div style={{ fontSize:9.5, color:"var(--ink-2)", marginBottom:2 }}>eGFR</div>
+      <div style={{ position:"relative", width:size, height:size }}>
+        <svg width={size} height={size} style={{ transform:"rotate(-90deg)" }}>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--border)" strokeWidth={sw} />
+          {valid && <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={sw}
+            strokeLinecap="round"
+            strokeDasharray={`${pct*circ} ${circ}`}
+            style={{ animation:"ring-fill 0.9s cubic-bezier(0.22,1,0.36,1) both" }} />}
+        </svg>
+        <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
+          fontFamily:"var(--mono)", fontSize:12, fontWeight:700, color:warn?"#dc2626":"var(--ink)" }}>
+          {valid ? val : "–"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Patient Card ── */
 function PatientCard({ r, onOpen, idx }) {
   const riskColors = { high:"#dc2626", medium:"#d97706", low:"#16a34a" };
@@ -164,7 +193,7 @@ function PatientCard({ r, onOpen, idx }) {
     <div onClick={() => onOpen(r.hn)} className="card-modern card-lift"
       style={{ background:"var(--surface)", borderRadius:16, overflow:"hidden",
         cursor:"pointer", display:"flex",
-        animation:`fadeUp 0.32s ease-out ${Math.min(idx*0.05,0.4)}s both`,
+        animation:`slideInCard 0.45s cubic-bezier(0.22,1,0.36,1) ${Math.min(idx*0.05,0.4)}s both`,
         borderLeft:`4px solid ${c}` }}>
       <div style={{ flex:1, padding:"16px 16px 14px" }}>
         {/* Row 1: name + HN */}
@@ -191,8 +220,8 @@ function PatientCard({ r, onOpen, idx }) {
 
         {/* Row 2: Lab values */}
         <div style={{ display:"flex", gap:10, marginBottom:10 }}>
+          <EgfrRing egfr={r.egfr} warn={r.egfr && parseFloat(r.egfr)<30} />
           {[
-            { label:"eGFR", val:r.egfr||"–", warn: r.egfr && parseFloat(r.egfr)<30 },
             { label:"K⁺",  val:r.k||"–",    warn: r.k && parseFloat(r.k)>5.5 },
             { label:"BP",  val:r.bpSys ? `${r.bpSys}/${r.bpDia||"–"}` : "–", warn: r.bpSys && parseFloat(r.bpSys)>=140 },
           ].map(({ label, val, warn }) => (

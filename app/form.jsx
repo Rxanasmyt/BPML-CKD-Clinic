@@ -1549,9 +1549,11 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
               boxShadow: valid && !saving ? "0 4px 16px rgba(13,148,136,.4)" : "none",
               position: "relative", overflow: "hidden",
             }}>
-            {saving
-              ? <><span style={{ width:16,height:16,border:"2px solid rgba(255,255,255,.4)",borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",animation:"spin .6s linear infinite" }} />กำลังบันทึก...</>
-              : <><Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล <span style={{ fontSize: 10.5, opacity: .8, fontWeight: 500, marginLeft: 2 }}>⌘/Ctrl+S</span></>}
+            {saved
+              ? <><span className="save-check-morph">✓</span> บันทึกสำเร็จ!</>
+              : saving
+                ? <><span style={{ width:16,height:16,border:"2px solid rgba(255,255,255,.4)",borderTopColor:"#fff",borderRadius:"50%",display:"inline-block",animation:"spin .6s linear infinite" }} />กำลังบันทึก...</>
+                : <><Icon name="check" size={18} color="#fff" /> บันทึกข้อมูล <span style={{ fontSize: 10.5, opacity: .8, fontWeight: 500, marginLeft: 2 }}>⌘/Ctrl+S</span></>}
           </button>
         </div>
         {!valid && <div style={{ maxWidth: 1080, margin: "6px auto 0", fontSize: 11.5, color: "#b45309" }}>กรอก HN, ชื่อ-สกุล และเลือก CKD stage เพื่อบันทึก</div>}
