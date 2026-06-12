@@ -1189,6 +1189,8 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
               </span>
             </div>
           )}
+          {/* Med Reconciliation Diff — เปรียบเทียบยาครั้งนี้กับ visit ที่แล้ว */}
+          {isCarriedSeed && <MedDiffPanel prevMeds={initial?.meds || []} curMeds={f.meds} visitDate={f._carriedFromVisit} />}
 
           {/* Feature 1: global allergy warning at top of med section */}
           {hasAnyConflict && (
@@ -1445,6 +1447,36 @@ function BpmlForm({ initial, user, records = [], onSave, onCancel }) {
         {/* นัดติดตาม */}
         <div ref={el => sectionRefs.current['6'] = el}>
         <FSection n="•" title="นัดติดตามผู้ป่วย" en="Follow-up reminder" open={openFollow} onToggle={() => { const n = !openFollow; setOpenFollow(n); if (n && !f.followUp) set("followUp", { due: "", note: "" }); if (!n) set("followUp", null); }}>
+          {/* Smart Follow-up Suggestion */}
+          {(() => {
+            function suggestFollowUp(stage, egfr, drpFindings, k) {
+              const eg = parseFloat(egfr);
+              const kv = parseFloat(k);
+              let days = 180; // default G1-2: 6 months
+              let reason = "CKD ระยะต้น";
+              if (stage === "5" || (eg && eg < 15)) { days = 30; reason = "CKD G5 — ติดตามรายเดือน"; }
+              else if (stage === "4" || (eg && eg < 30)) { days = 60; reason = "CKD G4 — ติดตาม 2 เดือน"; }
+              else if (stage === "3b" || (eg && eg < 45)) { days = 90; reason = "CKD G3b — ติดตาม 3 เดือน"; }
+              else if (stage === "3a" || (eg && eg < 60)) { days = 90; reason = "CKD G3a — ติดตาม 3 เดือน"; }
+              // High-risk DRP overrides to 2 weeks
+              const hasHighDrp = (drpFindings || []).some(fd => fd.sev === "HIGH");
+              if (hasHighDrp) { days = Math.min(days, 14); reason = "พบ DRP ความเสี่ยงสูง — ติดตาม 2 สัปดาห์"; }
+              // Hyperkalemia overrides to 4 weeks
+              if (kv && kv > 5.5) { days = Math.min(days, 28); reason = "K⁺ > 5.5 — ติดตาม 4 สัปดาห์"; }
+              return { days, reason, date: isoAddDays(days) };
+            }
+            const sug = suggestFollowUp(f.ckdStage, f.egfr, drpFindings, f.k);
+            return (
+              <div style={{ marginBottom: 10, padding: "10px 14px", background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <Icon name="clock" size={15} color="#0d9488" />
+                <span style={{ fontSize: 13, color: "#0f766e", flex: 1 }}>แนะนำ: <strong>{fmtDate(sug.date)}</strong> — {sug.reason}</span>
+                <button type="button" onClick={() => { set("followUp", { due: sug.date, note: sug.reason }); setOpenFollow(true); }}
+                  style={{ padding: "5px 14px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>
+                  ใช้วันนี้
+                </button>
+              </div>
+            );
+          })()}
           <div style={fGrid}>
             <Field label="วันที่นัดติดตาม" w={180}><input type="date" style={inS} value={f.followUp?.due || ""} onChange={(e) => set("followUp", { ...(f.followUp || {}), due: e.target.value })} /></Field>
             <Field label="หมายเหตุการติดตาม" grow><input style={inS} value={f.followUp?.note || ""} onChange={(e) => set("followUp", { ...(f.followUp || {}), note: e.target.value })} placeholder="เช่น ติดตามผล K⁺..." /></Field>
@@ -1843,6 +1875,71 @@ function DailyDoseReadout({ drug, strength, qty, freq, dose, egfr, label = "ข�
 }
 
 // ActualIntake — what the patient really takes (drives adherence + actual-overdose DRP)
+/* ---------- MedDiffPanel — side-by-side ยาเดิม vs ยาใหม่ เมื่อ carry-forward ---------- */
+function MedDiffPanel({ prevMeds, curMeds, visitDate }) {
+  const [open, setOpen] = React.useState(false);
+  if (!prevMeds.length && !curMeds.length) return null;
+  const diff = (typeof window.diffMedLists === "function")
+    ? window.diffMedLists(prevMeds, curMeds)
+    : { added: [], stopped: [], changed: [], unchanged: 0 };
+  const total = diff.added.length + diff.stopped.length + diff.changed.length;
+  const badge = (label, count, col, bg) => count > 0 && (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"2px 9px", borderRadius:99,
+      fontSize:11.5, fontWeight:700, color:col, background:bg, border:`1px solid ${col}44` }}>
+      {label} {count}
+    </span>
+  );
+  return (
+    <div style={{ marginBottom: 12, border: "1px solid #e0f2f1", borderRadius: 11, overflow: "hidden" }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+          background: open ? "#f0fdfa" : "#f8fffe", border:"none", cursor:"pointer", textAlign:"left", fontFamily:"var(--sans)" }}>
+        <Icon name="pill" size={15} color="#0d9488" />
+        <span style={{ fontSize:13, fontWeight:700, color:"#0f766e", flex:1 }}>
+          เปรียบเทียบยากับ visit{typeof visitDate === "string" ? ` ${fmtDate(visitDate)}` : "ที่แล้ว"}
+        </span>
+        <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+          {badge("ยาใหม่", diff.added.length, "#16a34a", "#f0fdf4")}
+          {badge("หยุดยา", diff.stopped.length, "#dc2626", "#fef2f2")}
+          {badge("เปลี่ยนขนาด", diff.changed.length, "#d97706", "#fffbeb")}
+          {total === 0 && <span style={{ fontSize:11.5, color:"#16a34a", fontWeight:600 }}>ไม่มีการเปลี่ยนแปลง ✓</span>}
+        </div>
+        <Icon name="chevronR" size={14} color="#0d9488" style={{ transform: open ? "rotate(90deg)" : "none", transition:"transform 0.2s" }} />
+      </button>
+      {open && (
+        <div style={{ padding:"12px 14px", background:"#fafffe", borderTop:"1px solid #e0f2f1", display:"flex", flexDirection:"column", gap:6, animation:"fadeUp 0.2s ease-out both" }}>
+          {diff.added.map((m, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8 }}>
+              <span style={{ fontSize:11, fontWeight:800, color:"#16a34a", padding:"1px 6px", background:"#dcfce7", borderRadius:4 }}>ยาใหม่</span>
+              <span style={{ fontSize:13, fontWeight:600, color:"var(--ink)" }}>{m.drug}</span>
+              {m.strength && <span style={{ fontSize:12, color:"var(--ink-2)" }}>{m.strength}</span>}
+            </div>
+          ))}
+          {diff.stopped.map((m, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8 }}>
+              <span style={{ fontSize:11, fontWeight:800, color:"#dc2626", padding:"1px 6px", background:"#fee2e2", borderRadius:4 }}>หยุดยา</span>
+              <span style={{ fontSize:13, fontWeight:600, color:"var(--ink)", textDecoration:"line-through", opacity:.7 }}>{m.drug}</span>
+              {m.strength && <span style={{ fontSize:12, color:"var(--ink-2)" }}>{m.strength}</span>}
+            </div>
+          ))}
+          {diff.changed.map((m, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, flexWrap:"wrap" }}>
+              <span style={{ fontSize:11, fontWeight:800, color:"#d97706", padding:"1px 6px", background:"#fef3c7", borderRadius:4 }}>เปลี่ยนขนาด</span>
+              <span style={{ fontSize:13, fontWeight:600, color:"var(--ink)" }}>{m.drug}</span>
+              <span style={{ fontSize:12, color:"var(--ink-2)", fontFamily:"var(--mono)" }}>{m.from}</span>
+              <span style={{ fontSize:12, color:"#d97706" }}>→</span>
+              <span style={{ fontSize:12, color:"#b45309", fontWeight:700, fontFamily:"var(--mono)" }}>{m.to}</span>
+            </div>
+          ))}
+          {diff.unchanged > 0 && (
+            <div style={{ fontSize:12, color:"var(--ink-2)", padding:"4px 10px" }}>ไม่เปลี่ยนแปลง {diff.unchanged} รายการ</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ActualIntake({ m, onChange, drug, strength, egfr }) {
   const same = m.sameAsPrescribed !== false;
   return (
@@ -2353,41 +2450,6 @@ function DrpAnalysisPanel({ meds, otcItems, egfr, k, ckdStage, hb, hco3, phos, c
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ---------- MedDiffPanel — เปรียบเทียบยาเปลี่ยนแปลงจากนัดก่อน ---------- */
-function MedDiffPanel({ prev, curMeds }) {
-  const diff = React.useMemo(() => {
-    if (typeof window.diffMedLists !== "function") return null;
-    return window.diffMedLists(prev.meds || [], curMeds || []);
-  }, [prev, curMeds]);
-  if (!diff) return null;
-  const total = diff.added.length + diff.stopped.length + diff.changed.length;
-  if (total === 0) {
-    return (
-      <div style={{ marginBottom: 14, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface-2)", padding: "10px 14px", fontSize: 12.5, color: "var(--ink-2)" }}>
-        เทียบกับนัด {fmtDate(prev.date)}: ไม่มีการเปลี่ยนแปลงรายการยา ({diff.unchanged} รายการคงเดิม)
-      </div>
-    );
-  }
-  const Row = ({ tone, icon, label, text }) => (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0" }}>
-      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: tone + "18", color: tone, flexShrink: 0 }}>{icon} {label}</span>
-      <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>{text}</span>
-    </div>
-  );
-  return (
-    <div style={{ marginBottom: 14, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)", overflow: "hidden" }}>
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>
-        🔄 เปรียบเทียบยากับนัด {fmtDate(prev.date)} — เปลี่ยน {total} รายการ
-      </div>
-      <div style={{ padding: "6px 14px 10px" }}>
-        {diff.added.map((m, i) => <Row key={"a" + i} tone="#16a34a" icon="🟢" label="เพิ่มใหม่" text={`${m.drug} ${m.strength || ""}`.trim()} />)}
-        {diff.stopped.map((m, i) => <Row key={"s" + i} tone="#dc2626" icon="🔴" label="หยุด" text={`${m.drug} ${m.strength || ""}`.trim()} />)}
-        {diff.changed.map((c, i) => <Row key={"c" + i} tone="#d97706" icon="🟡" label="เปลี่ยนขนาด" text={`${c.drug}: ${c.from || "–"} → ${c.to || "–"}`} />)}
-      </div>
     </div>
   );
 }

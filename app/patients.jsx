@@ -205,6 +205,15 @@ function PatientCard({ r, onOpen, idx }) {
           ))}
         </div>
 
+        {/* Row 2b: OTC/Herbal indicator */}
+        {(r.otcHerbal || (r.otcItems && r.otcItems.length > 0)) && (
+          <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:8 }}>
+            <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:"#fef9c3", border:"1px solid #fde047", color:"#854d0e", fontWeight:600 }}>
+              🌿 OTC{r.otcHerbal ? "/สมุนไพร" : ""}{r.otcItems?.length ? ` ${r.otcItems.length} รายการ` : ""}
+            </span>
+          </div>
+        )}
+
         {/* Row 3: Risk + follow-up */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <RiskBadge band={r.risk.band} score={r.risk.score} />
@@ -221,6 +230,20 @@ function PatientCard({ r, onOpen, idx }) {
             <div style={{ fontSize:11.5, color:"var(--ink-2)" }}>{fmtDate(r.date)}</div>
           )}
         </div>
+        {/* Top 3 risk drivers — แสดงเมื่อความเสี่ยง medium หรือสูง */}
+        {r.risk.band !== "low" && r.risk.factors && r.risk.factors.length > 0 && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display:"flex", flexWrap:"wrap", gap:4 }}>
+            {r.risk.factors.slice(0, 3).map((fa, i) => (
+              <span key={i} style={{ fontSize:10.5, padding:"2px 7px", borderRadius:6,
+                background: r.risk.band === "high" ? "#fef2f2" : "#fffbeb",
+                color: r.risk.band === "high" ? "#b91c1c" : "#92400e",
+                border: `1px solid ${r.risk.band === "high" ? "#fca5a5" : "#fde68a"}`,
+                fontWeight:600 }}>
+                {fa.t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {/* Right arrow */}
       <div style={{ display:"flex", alignItems:"center", padding:"0 12px",
@@ -1340,6 +1363,84 @@ function DrugSafetyCard({ rec }) {
 }
 
 /* =========================================================================
+   InterventionTimeline — ไทม์ไลน์การแทรกแซงและผลลัพธ์ข้าม visit ทั้งหมด
+   ========================================================================= */
+function InterventionTimeline({ history }) {
+  const chrono = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const visits = chrono.filter((v) => (v.interventions || []).length > 0 || v.outcome || (v.drps || []).length > 0 || v.counselingNote);
+  const outcomeIcon = (o) => o === "accepted" ? "✅" : o === "not_accepted" ? "❌" : "⏳";
+  const outcomeText = (v) => {
+    if (v.outcome === "accepted") return "แก้ไขแล้ว";
+    if (v.outcome === "not_accepted") return `ยังไม่แก้ไข${v.outcomeReason ? ` — ${v.outcomeReason}` : ""}`;
+    return null;
+  };
+  if (!visits.length) return (
+    <div style={{ textAlign:"center", padding:"40px 20px", color:"var(--ink-2)" }}>
+      <div style={{ fontSize:36, marginBottom:12 }}>📋</div>
+      <div style={{ fontWeight:700, fontSize:15 }}>ยังไม่มีบันทึกการแทรกแซง</div>
+      <div style={{ fontSize:13, marginTop:6 }}>ข้อมูลจะปรากฏเมื่อมีการบันทึก DRP หรือ Intervention ใน visit ถัดไป</div>
+    </div>
+  );
+  return (
+    <div style={{ padding:"4px 0" }}>
+      <div style={{ fontWeight:700, fontSize:14, color:"var(--ink)", marginBottom:16 }}>
+        ประวัติการแทรกแซง {visits.length} visit
+      </div>
+      <div style={{ position:"relative" }}>
+        {/* vertical line */}
+        <div style={{ position:"absolute", left:19, top:0, bottom:0, width:2, background:"var(--border)", borderRadius:2 }} />
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {[...visits].reverse().map((v, i) => {
+            const intLabels = (v.interventions || []).map((k) => (typeof INTERVENTION_OPTIONS!=="undefined"?INTERVENTION_OPTIONS:[]).find((o)=>o.key===k)?.th).filter(Boolean);
+            const drpLabels = (v.drps || []).map((k) => (typeof DRP_OPTIONS!=="undefined"?DRP_OPTIONS:[]).find((o)=>o.key===k)?.th).filter(Boolean);
+            const outcome = outcomeText(v);
+            const egfr = v.egfr ? parseFloat(v.egfr) : null;
+            return (
+              <div key={v.id} style={{ display:"flex", gap:12, animation:`fadeUp 0.25s ease-out ${i*0.04}s both` }}>
+                {/* dot */}
+                <div style={{ width:40, flexShrink:0, display:"flex", justifyContent:"center", paddingTop:2 }}>
+                  <div style={{ width:14, height:14, borderRadius:99, background: v.outcome==="accepted"?"#16a34a": v.outcome==="not_accepted"?"#dc2626":"var(--brand)", border:"2px solid var(--surface)", boxShadow:`0 0 0 3px ${v.outcome==="accepted"?"#bbf7d0":v.outcome==="not_accepted"?"#fecaca":"var(--brand-soft)"}`, zIndex:1 }} />
+                </div>
+                {/* content */}
+                <div style={{ flex:1, padding:"12px 14px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, marginBottom:2 }} className="card-lift">
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                    <div style={{ fontWeight:700, fontSize:13, color:"var(--ink)" }}>{fmtDate(v.date)}</div>
+                    <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                      {egfr && <span style={{ fontFamily:"var(--mono)", fontSize:12, color: egfr<30?"#dc2626":egfr<60?"#d97706":"#16a34a", fontWeight:700 }}>eGFR {egfr}</span>}
+                      {v.pharmacist && <span style={{ fontSize:11.5, color:"var(--ink-2)" }}>โดย {v.pharmacist}</span>}
+                    </div>
+                  </div>
+                  {drpLabels.length > 0 && (
+                    <div style={{ marginBottom:6, display:"flex", flexWrap:"wrap", gap:4 }}>
+                      {drpLabels.map((l,j) => <span key={j} style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:"#fef2f2", color:"#b91c1c", border:"1px solid #fca5a5", fontWeight:600 }}>⚠️ {l}</span>)}
+                    </div>
+                  )}
+                  {intLabels.length > 0 && (
+                    <div style={{ marginBottom:6, display:"flex", flexWrap:"wrap", gap:4 }}>
+                      {intLabels.map((l,j) => <span key={j} style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:"var(--brand-soft)", color:"var(--brand-deep)", border:"1px solid var(--brand)44", fontWeight:600 }}>→ {l}</span>)}
+                    </div>
+                  )}
+                  {v.counselingNote && <div style={{ fontSize:12.5, color:"var(--ink-2)", fontStyle:"italic", marginBottom:6 }}>"{v.counselingNote}"</div>}
+                  {outcome && (
+                    <div style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, fontWeight:700,
+                      color: v.outcome==="accepted"?"#15803d":"#b91c1c" }}>
+                      {outcomeIcon(v.outcome)} {outcome}
+                    </div>
+                  )}
+                  {!outcome && !intLabels.length && !drpLabels.length && (
+                    <div style={{ fontSize:12, color:"var(--ink-2)" }}>บันทึก visit (ไม่มีการแทรกแซง)</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
    MedTimelineCard — ไทม์ไลน์การเปลี่ยนแปลงรายการยาข้าม visit (med reconciliation)
    ใช้ diffMedLists เทียบ visit ที่ติดกัน
    ========================================================================= */
@@ -1490,8 +1591,8 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
       </div>
 
       {/* Tab switcher */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {[["detail","รายละเอียด","list"],["trend","แนวโน้ม & เปรียบเทียบ","trend"]].map(([v,t,ic]) => (
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap:"wrap" }}>
+        {[["detail","รายละเอียด","list"],["trend","แนวโน้ม & เปรียบเทียบ","trend"],["timeline","ประวัติการแทรกแซง","clock"]].map(([v,t,ic]) => (
           <button key={v} onClick={() => setActiveTab(v)} style={{ display:"flex",alignItems:"center",gap:8,padding:"9px 18px",borderRadius:10,border:`1px solid ${activeTab===v?"var(--brand)":"var(--border)"}`,background:activeTab===v?"var(--brand)":"var(--surface)",color:activeTab===v?"#fff":"var(--ink-2)",fontSize:14,fontWeight:activeTab===v?700:500,cursor:"pointer",fontFamily:"var(--sans)" }}>
             <Icon name={ic} size={16} color={activeTab===v?"#fff":"currentColor"} />{t}
             {v==="trend" && history.length>1 && <span style={{background:activeTab===v?"rgba(255,255,255,.3)":"var(--brand-soft)",color:activeTab===v?"#fff":"var(--brand-deep)",fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:99}}>{history.length} visits</span>}
@@ -1502,6 +1603,8 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
       <div key={activeTab} style={{ animation: "fadeUp 0.26s ease-out both" }}>
       {activeTab === "trend" ? (
         <TrendPanel history={history} onSelectVisit={(id) => { setSelId(id); setActiveTab("detail"); }} />
+      ) : activeTab === "timeline" ? (
+        <InterventionTimeline history={history} />
       ) : (
       <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16, alignItems: "start" }} className="detail-grid">
         {/* history timeline */}

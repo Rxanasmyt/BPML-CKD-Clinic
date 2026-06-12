@@ -283,6 +283,7 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
   const scope  = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
   const latest = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r) }));
   const mounted = useMounted(50);
+  const [drpDrillOpen, setDrpDrillOpen] = React.useState(false);
 
   /* ── KPI ── */
   const total = latest.length;
@@ -467,7 +468,8 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
           <GradKpi stagger={4}
             label="DRP Resolution Rate" value={drpResolveRate} unit="%" icon="🔄"
             grad="linear-gradient(135deg,#0284c7 0%,#0369a1 55%,#1e3a5f 100%)"
-            sub={`แก้ไขแล้ว ${_drpResolved} · ยังมี ${_drpOngoing} · แย่ลง ${_drpWorsened}`} />
+            sub={`แก้ไขแล้ว ${_drpResolved} · ยังมี ${_drpOngoing} · แย่ลง ${_drpWorsened}`}
+            onClick={() => setDrpDrillOpen(true)} />
         )}
       </div>
 
@@ -791,6 +793,61 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
           ))}
         </div>
       )}
+
+      {/* DRP Drill-down Modal — รายชื่อผู้ป่วยที่มี DRP ค้างอยู่ */}
+      {drpDrillOpen && (() => {
+        const unresolved = latest.filter((r) => {
+          const fu = r.drpFollowup || {};
+          return (r.drps || []).some((k) => !fu[k] || fu[k] === "ongoing" || fu[k] === "worsened");
+        });
+        return (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.42)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+            onClick={() => setDrpDrillOpen(false)}>
+            <div style={{ background:"var(--surface)", borderRadius:20, width:"100%", maxWidth:540, maxHeight:"80vh", display:"flex", flexDirection:"column", boxShadow:"0 24px 60px rgba(0,0,0,.25)", animation:"popIn 0.22s ease-out both" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <div>
+                  <div style={{ fontWeight:800, fontSize:17, color:"var(--ink)" }}>DRP ที่ยังไม่ได้แก้ไข</div>
+                  <div style={{ fontSize:13, color:"var(--ink-2)", marginTop:3 }}>{unresolved.length} ราย · คลิกเพื่อดูรายละเอียด</div>
+                </div>
+                <button onClick={() => setDrpDrillOpen(false)} style={{ border:"none", background:"var(--surface-2)", borderRadius:8, padding:"6px 10px", cursor:"pointer", fontFamily:"var(--sans)", color:"var(--ink-2)", fontSize:13 }}>✕</button>
+              </div>
+              <div style={{ overflowY:"auto", padding:"12px 16px", display:"flex", flexDirection:"column", gap:8 }}>
+                {unresolved.length === 0 && <div style={{ textAlign:"center", padding:"32px 0", color:"var(--ink-2)" }}>✅ DRP ทุกรายการได้รับการติดตามแล้ว</div>}
+                {unresolved.map((r, i) => {
+                  const fu = r.drpFollowup || {};
+                  const pendingKeys = (r.drps || []).filter((k) => !fu[k] || fu[k] === "ongoing" || fu[k] === "worsened");
+                  return (
+                    <div key={r.id} onClick={() => { onOpenPatient(r.hn); setDrpDrillOpen(false); }}
+                      style={{ padding:"12px 14px", background:"var(--surface-2)", border:"1px solid var(--border)", borderLeft:`4px solid ${r.risk.band==="high"?"#dc2626":"#d97706"}`,
+                        borderRadius:10, cursor:"pointer", animation:`fadeUp 0.22s ease-out ${i*0.04}s both` }}
+                      className="card-lift">
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                        <div style={{ fontWeight:700, fontSize:14, color:"var(--ink)" }}>{r.name}</div>
+                        <div style={{ fontFamily:"var(--mono)", fontSize:11.5, color:"var(--ink-2)" }}>HN {r.hn}</div>
+                      </div>
+                      <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                        {pendingKeys.map((k) => {
+                          const label = (typeof DRP_OPTIONS !== "undefined" ? DRP_OPTIONS : []).find((o) => o.key === k)?.th || k;
+                          const isWorsened = fu[k] === "worsened";
+                          return (
+                            <span key={k} style={{ fontSize:11, padding:"2px 8px", borderRadius:99, fontWeight:600,
+                              background: isWorsened ? "#fef2f2" : "#fffbeb",
+                              color: isWorsened ? "#dc2626" : "#d97706",
+                              border: `1px solid ${isWorsened ? "#fca5a5" : "#fde68a"}` }}>
+                              {isWorsened ? "⚠️ " : ""}{label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
