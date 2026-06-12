@@ -503,6 +503,48 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
         )}
       </div>
 
+      {/* ── Pharmacist Personal KPI ── */}
+      {user && (() => {
+        const myVisits = scope.filter(r => r.pharmacist === user.display || r.pharmacist === user.username || r.createdBy === user.id);
+        const myPatients = new Set(myVisits.map(r => r.hn)).size;
+        const myDrps = myVisits.reduce((a, r) => a + (r.drps||[]).length, 0);
+        const myWithOutcome = myVisits.filter(r => r.outcome);
+        const myAccept = myWithOutcome.filter(r => r.outcome === "accepted").length;
+        const myRate = myWithOutcome.length ? Math.round(myAccept/myWithOutcome.length*100) : 0;
+        const myDue = latestPerPatient(myVisits).filter(r => r.followUp?.due && r.followUp.due <= isoAddDays(7)).length;
+        if (!myVisits.length) return null;
+        return (
+          <div data-reveal style={{ background:"var(--surface)", borderRadius:18, padding:"18px 22px", marginBottom:16,
+            border:"1px solid var(--border)", boxShadow:"0 2px 12px rgba(0,0,0,.06)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:14 }}>
+              <div style={{ width:34, height:34, borderRadius:10,
+                background:"linear-gradient(135deg,var(--brand-soft),rgba(13,148,136,.2))", display:"grid", placeItems:"center" }}>
+                <span style={{ fontSize:17 }}>👤</span>
+              </div>
+              <h3 style={{ fontSize:15, fontWeight:700, color:"var(--ink)", margin:0, flex:1 }}>
+                ผลงานของฉัน
+              </h3>
+              <span style={{ fontSize:12, color:"var(--ink-2)" }}>{user.display || user.username}</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))", gap:10 }}>
+              {[
+                { label:"ผู้ป่วยของฉัน", value:myPatients, icon:"🏥", color:"var(--brand)" },
+                { label:"DRP ที่พบ",     value:myDrps,    icon:"💊", color:"#7c3aed" },
+                { label:"Acceptance",   value:`${myRate}%`, icon:"✅", color:"#16a34a" },
+                { label:"นัดใกล้ถึง",   value:myDue,     icon:"📅", color: myDue > 0 ? "#d97706" : "#16a34a" },
+              ].map(({ label, value, icon, color }) => (
+                <div key={label} style={{ padding:"10px 12px", borderRadius:11,
+                  background:`${color}0d`, border:`1px solid ${color}33`, textAlign:"center" }}>
+                  <div style={{ fontSize:18, marginBottom:4 }}>{icon}</div>
+                  <div style={{ fontFamily:"var(--mono)", fontSize:22, fontWeight:800, color }}>{value}</div>
+                  <div style={{ fontSize:10.5, color:"var(--ink-2)", fontWeight:600, marginTop:2 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── ROW 2: Risk + Stage + Activity ── */}
       <div data-reveal style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.2fr", gap: 16, marginBottom: 16 }} className="dash-grid">
 
@@ -760,6 +802,9 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
 
       {/* ── ROW 4: Population Analytics ── */}
       <PopulationAnalytics scope={scope} records={records} />
+
+      <OutcomeHeatmap scope={scope} />
+      <EgfrCohortChart records={records} />
 
       {/* ── SECTION HEADER: DRP & Risk Analysis ── */}
       <DRPRiskAnalysis scope={scope} onNavigate={onGoPatients} />
@@ -1622,6 +1667,121 @@ function DRPRiskAnalysis({ scope, onNavigate }) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function OutcomeHeatmap({ scope }) {
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mo = scope.filter(r => (r.date||'').startsWith(key));
+    const drpTotal = mo.reduce((a, r) => a + (r.drps||[]).length, 0);
+    const resolved = mo.reduce((a, r) => {
+      const fu = r.drpFollowup || {};
+      return a + (r.drps||[]).filter(k => fu[k] === 'resolved').length;
+    }, 0);
+    const rate = drpTotal > 0 ? Math.round(resolved/drpTotal*100) : null;
+    const visits = mo.length;
+    months.push({ key, label: `${d.getMonth()+1}/${String(d.getFullYear()).slice(-2)}`, rate, visits, drpTotal });
+  }
+  const getColor = (rate) => {
+    if (rate === null) return 'var(--border)';
+    if (rate >= 80) return '#16a34a';
+    if (rate >= 60) return '#0d9488';
+    if (rate >= 40) return '#d97706';
+    return '#dc2626';
+  };
+  return (
+    <div className="card-modern" data-reveal
+      style={{ background:"var(--surface)", borderRadius:18, padding:"20px 24px", marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:16 }}>
+        <div style={{ width:34, height:34, borderRadius:10,
+          background:"linear-gradient(135deg,#16a34a22,#16a34a44)", display:"grid", placeItems:"center" }}>
+          <span style={{ fontSize:17 }}>📅</span>
+        </div>
+        <h3 style={{ fontSize:15, fontWeight:700, color:"var(--ink)", margin:0, flex:1 }}>
+          DRP Resolution Rate — 12 เดือนย้อนหลัง
+        </h3>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:6 }}>
+        {months.map(m => (
+          <div key={m.key} title={m.rate !== null ? `${m.label}: ${m.rate}% (${m.visits} visits, ${m.drpTotal} DRPs)` : `${m.label}: ไม่มีข้อมูล`}
+            style={{ aspectRatio:"1", borderRadius:8, background: m.rate !== null
+              ? `color-mix(in srgb, ${getColor(m.rate)} ${Math.max(20, m.rate||20)}%, var(--surface-2))`
+              : 'var(--surface-2)',
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+              border:`1px solid ${getColor(m.rate)}33`, cursor:"default",
+              transition:"transform 0.15s", padding:4 }}
+            onMouseEnter={e => e.currentTarget.style.transform='scale(1.1)'}
+            onMouseLeave={e => e.currentTarget.style.transform=''}>
+            <div style={{ fontSize:9, fontWeight:700, color:"var(--ink-2)", lineHeight:1 }}>{m.label}</div>
+            {m.rate !== null && <div style={{ fontSize:11, fontWeight:800, color: getColor(m.rate), lineHeight:1, marginTop:2 }}>{m.rate}%</div>}
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"flex", gap:16, marginTop:12, flexWrap:"wrap" }}>
+        {[["≥80%","#16a34a","สำเร็จดี"],["60–79%","#0d9488","พอใช้"],["40–59%","#d97706","ต้องปรับ"],["<40%","#dc2626","วิกฤต"]].map(([label, color, desc]) => (
+          <div key={label} style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <div style={{ width:12, height:12, borderRadius:3, background:color }} />
+            <span style={{ fontSize:11, color:"var(--ink-2)" }}>{label} {desc}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EgfrCohortChart({ records }) {
+  const stages = ["1","2","3a","3b","4","5"];
+  const data = stages.map(st => {
+    const pts = latestPerPatient(records).filter(r => r.ckdStage === st);
+    const withProg = pts.map(r => medProgression(records, r.hn)).filter(Boolean);
+    const rapid = withProg.filter(p => p.perYear >= 5).length;
+    const decline = withProg.filter(p => p.perYear >= 3 && p.perYear < 5).length;
+    const stable = withProg.filter(p => p.level === "stable" || p.level === "improving").length;
+    return { st, total: pts.length, rapid, decline, stable };
+  }).filter(d => d.total > 0);
+  if (!data.length) return null;
+  return (
+    <div className="card-modern" data-reveal
+      style={{ background:"var(--surface)", borderRadius:18, padding:"20px 24px", marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:16 }}>
+        <div style={{ width:34, height:34, borderRadius:10,
+          background:"linear-gradient(135deg,#0284c722,#0284c744)", display:"grid", placeItems:"center" }}>
+          <span style={{ fontSize:17 }}>📊</span>
+        </div>
+        <h3 style={{ fontSize:15, fontWeight:700, color:"var(--ink)", margin:0, flex:1 }}>
+          อัตราการเสื่อม eGFR แยกตาม Stage
+        </h3>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {data.map(d => (
+          <div key={d.st} style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:12, fontWeight:700, color:"var(--ink-2)", width:40, flexShrink:0 }}>G{d.st}</span>
+            <div style={{ flex:1, height:22, borderRadius:99, background:"var(--surface-2)", overflow:"hidden", display:"flex" }}>
+              {d.rapid > 0 && <div style={{ width:`${d.rapid/d.total*100}%`, background:"#dc2626", transition:"width .7s", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <span style={{ fontSize:9.5, color:"#fff", fontWeight:800 }}>{d.rapid}</span>
+              </div>}
+              {d.decline > 0 && <div style={{ width:`${d.decline/d.total*100}%`, background:"#d97706", transition:"width .7s", height:"100%", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <span style={{ fontSize:9.5, color:"#fff", fontWeight:800 }}>{d.decline}</span>
+              </div>}
+              {d.stable > 0 && <div style={{ width:`${d.stable/d.total*100}%`, background:"#16a34a", transition:"width .7s", height:"100%" }} />}
+            </div>
+            <span style={{ fontSize:11.5, fontFamily:"var(--mono)", color:"var(--ink-2)", width:30, textAlign:"right" }}>{d.total}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"flex", gap:16, marginTop:10, flexWrap:"wrap" }}>
+        {[["เสื่อมเร็ว (≥5/ปี)","#dc2626"],["เสื่อมปานกลาง (3–5/ปี)","#d97706"],["คงที่/ดีขึ้น","#16a34a"]].map(([label, color]) => (
+          <div key={label} style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <div style={{ width:10, height:10, borderRadius:2, background:color }} />
+            <span style={{ fontSize:11, color:"var(--ink-2)" }}>{label}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

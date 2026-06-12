@@ -203,9 +203,58 @@ function medProgression(records, hn) {
     stageWorsened: stageTo > stageFrom, label, color, visits: vis.length };
 }
 
+function predictEgfr(records, hn) {
+  const vis = (records || [])
+    .filter(r => r.hn === hn && r.date && !isNaN(parseFloat(r.egfr)))
+    .sort((a, b) => (a.date||'').localeCompare(b.date||''));
+  if (vis.length < 3) return null;
+  const t0 = new Date(vis[0].date).getTime();
+  const pts = vis.map(r => ({
+    x: (new Date(r.date).getTime() - t0) / (86400000 * 30),
+    y: parseFloat(r.egfr)
+  }));
+  const n = pts.length;
+  const sx = pts.reduce((a, p) => a + p.x, 0);
+  const sy = pts.reduce((a, p) => a + p.y, 0);
+  const sxy = pts.reduce((a, p) => a + p.x * p.y, 0);
+  const sxx = pts.reduce((a, p) => a + p.x * p.x, 0);
+  const denom = n * sxx - sx * sx;
+  if (Math.abs(denom) < 1e-9) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  if (slope >= -0.05) return { slope: 0, declining: false };
+  const lastX = (new Date(vis[vis.length - 1].date).getTime() - t0) / (86400000 * 30);
+  const curEgfr = intercept + slope * lastX;
+  const mTo15 = curEgfr > 15 ? Math.round((15 - curEgfr) / slope) : null;
+  const mTo30 = curEgfr > 30 ? Math.round((30 - curEgfr) / slope) : null;
+  return {
+    declining: true,
+    slope: +slope.toFixed(3),
+    perYear: +(slope * 12).toFixed(1),
+    curEgfr: +curEgfr.toFixed(1),
+    monthsTo15: mTo15 > 0 ? mTo15 : null,
+    monthsTo30: mTo30 > 0 ? mTo30 : null,
+  };
+}
+
+function kdigoReferralCheck(r, records) {
+  const criteria = [];
+  const eg = parseFloat(r.egfr);
+  if (!isNaN(eg) && eg < 30) criteria.push('eGFR < 30 mL/min (G4/G5)');
+  const prog = medProgression(records, r.hn);
+  if (prog && prog.perYear >= 5) criteria.push(`eGFR ลดเร็ว ${prog.perYear} mL/min/ปี`);
+  const k = parseFloat(r.k);
+  if (!isNaN(k) && k > 6.0) criteria.push('Hyperkalemia รุนแรง (K⁺ > 6.0)');
+  const uacr = parseFloat(r.uacr);
+  if (!isNaN(uacr) && uacr >= 300) criteria.push('Proteinuria รุนแรง (UACR ≥ 300 mg/g)');
+  const bp = parseFloat(r.bpSys);
+  if (!isNaN(bp) && bp >= 160) criteria.push('ความดันสูงมาก ≥ 160 mmHg');
+  return criteria.length > 0 ? criteria : null;
+}
+
 Object.assign(window, {
   SOURCE_OPTIONS, DRP_OPTIONS, drpOption, drpLabel, INTERVENTION_OPTIONS,
   CKD_STAGES, computeRisk, RISK_META, Store, USERS,
   TH_MONTHS, fmtDate, todayDate, todayISO, isoAddDays, monthStartISO,
-  hashPin, randomSalt, haptic, medProgression,
+  hashPin, randomSalt, haptic, medProgression, predictEgfr, kdigoReferralCheck,
 });

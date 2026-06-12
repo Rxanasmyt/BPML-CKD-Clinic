@@ -271,6 +271,34 @@ function PatientCard({ r, onOpen, idx }) {
             <div style={{ fontSize:11.5, color:"var(--ink-2)" }}>{fmtDate(r.date)}</div>
           )}
         </div>
+        {/* KDIGO Referral Alert */}
+        {(() => {
+          const kdigo = kdigoReferralCheck(r, []);
+          return kdigo ? (
+            <div style={{ marginTop:6, padding:"4px 9px", borderRadius:8, background:"#fff1f2",
+              border:"1.5px solid #fda4af", display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ fontSize:12 }}>🏥</span>
+              <span style={{ fontSize:10.5, fontWeight:700, color:"#be123c" }}>ควรส่งต่อ Nephrology</span>
+            </div>
+          ) : null;
+        })()}
+        {/* eGFR Trajectory badge */}
+        {(() => {
+          const pred = r._prediction;
+          if (!pred || !pred.declining) return null;
+          if (!pred.monthsTo30 && !pred.monthsTo15) return null;
+          const months = pred.monthsTo15 || pred.monthsTo30;
+          const label = pred.monthsTo15 ? 'Stage 5' : 'Stage 4';
+          return (
+            <div style={{ marginTop:6, padding:"4px 9px", borderRadius:8, background:"#fff7ed",
+              border:"1px solid #fed7aa", display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ fontSize:11 }}>📉</span>
+              <span style={{ fontSize:10.5, fontWeight:700, color:"#c2410c" }}>
+                คาดถึง {label} ใน ~{months} เดือน
+              </span>
+            </div>
+          );
+        })()}
         {/* Top 3 risk drivers — แสดงเมื่อความเสี่ยง medium หรือสูง */}
         {r.risk.band !== "low" && r.risk.factors && r.risk.factors.length > 0 && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display:"flex", flexWrap:"wrap", gap:4 }}>
@@ -304,9 +332,14 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   const [declineOnly, setDeclineOnly] = React.useState(false);
   const [sort, setSort] = React.useState("risk");
   const [view, setView] = React.useState("card"); // card | table
+  const [advOpen, setAdvOpen] = React.useState(false);
+  const [egfrMin, setEgfrMin] = React.useState("");
+  const [egfrMax, setEgfrMax] = React.useState("");
+  const [drugF, setDrugF] = React.useState("");
+  const [drpF, setDrpF] = React.useState("all");
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
-  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r), progression: medProgression(records, r.hn) }));
+  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r), progression: medProgression(records, r.hn), _prediction: predictEgfr(records, r.hn) }));
   const due7  = isoAddDays(7), today = todayISO();
   let rows = [...all];
 
@@ -324,6 +357,10 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   if (stageF !== "all") rows = rows.filter((r) => r.ckdStage === stageF);
   if (dueOnly) rows = rows.filter((r) => r.followUp?.due && r.followUp.due <= due7);
   if (declineOnly) rows = rows.filter((r) => r.progression && (r.progression.level === "rapid" || r.progression.level === "decline" || r.progression.stageWorsened));
+  if (egfrMin !== "") rows = rows.filter(r => !r.egfr || parseFloat(r.egfr) >= parseFloat(egfrMin));
+  if (egfrMax !== "") rows = rows.filter(r => !r.egfr || parseFloat(r.egfr) <= parseFloat(egfrMax));
+  if (drugF.trim()) rows = rows.filter(r => (r.meds||[]).some(m => (m.drug||'').toLowerCase().includes(drugF.trim().toLowerCase())));
+  if (drpF !== "all") rows = rows.filter(r => (r.drps||[]).includes(drpF));
   rows.sort((a, b) => {
     if (sort === "risk") return b.risk.score - a.risk.score;
     if (sort === "date") return (b.date || "").localeCompare(a.date || "");
@@ -362,6 +399,34 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
           <Icon name="plus" size={18} color="#fff" />บันทึกผู้ป่วยใหม่
         </button>
       </div>
+
+      {advOpen && (
+        <div style={{ background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:12,
+          padding:"14px 16px", marginBottom:12, display:"flex", gap:12, flexWrap:"wrap", alignItems:"center",
+          animation:"fadeUp 0.22s ease-out both" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:12, color:"var(--ink-2)", fontWeight:600, whiteSpace:"nowrap" }}>eGFR</span>
+            <input type="number" placeholder="min" value={egfrMin} onChange={e=>setEgfrMin(e.target.value)}
+              style={{ ...inS, width:70, height:36, fontSize:13 }} />
+            <span style={{ color:"var(--ink-2)" }}>–</span>
+            <input type="number" placeholder="max" value={egfrMax} onChange={e=>setEgfrMax(e.target.value)}
+              style={{ ...inS, width:70, height:36, fontSize:13 }} />
+          </div>
+          <input placeholder="🔍 ชื่อยาเฉพาะ" value={drugF} onChange={e=>setDrugF(e.target.value)}
+            style={{ ...inS, height:36, fontSize:13, width:160 }} />
+          <select value={drpF} onChange={e=>setDrpF(e.target.value)}
+            style={{ ...inS, height:36, fontSize:13, width:"auto", cursor:"pointer" }}>
+            <option value="all">ทุก DRP</option>
+            {DRP_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.th}</option>)}
+          </select>
+          {(egfrMin||egfrMax||drugF||drpF!=="all") && (
+            <button onClick={() => { setEgfrMin(""); setEgfrMax(""); setDrugF(""); setDrpF("all"); }}
+              style={{ fontSize:12, color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontWeight:700, fontFamily:"var(--sans)" }}>
+              ล้างตัวกรอง ✕
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Stats bar */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:18 }}
@@ -419,6 +484,14 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
           <option value="egfr">เรียงตาม eGFR (ต่ำสุดก่อน)</option>
           <option value="name">เรียงตามชื่อ (ก–ฮ)</option>
         </select>
+        <button onClick={() => setAdvOpen(v => !v)}
+          style={{ ...inS, width:"auto", height:42, cursor:"pointer", display:"flex", alignItems:"center", gap:6,
+            background: advOpen ? "var(--brand-soft)" : "var(--surface)",
+            borderColor: advOpen ? "var(--brand)" : "var(--border)",
+            color: advOpen ? "var(--brand-deep)" : "var(--ink-2)",
+            fontWeight: advOpen ? 700 : 500, fontFamily:"var(--sans)" }}>
+          🔬 ตัวกรองเพิ่มเติม
+        </button>
         {/* View toggle */}
         <div style={{ display:"flex", border:"1px solid var(--border)", borderRadius:9, overflow:"hidden" }}>
           {[["card","⊞"],["table","☰"]].map(([v,ico]) => (
@@ -1547,6 +1620,83 @@ function MedTimelineCard({ history }) {
   );
 }
 
+/* ---------- CareGoalsPanel ---------- */
+function CareGoalsPanel({ hn }) {
+  const KEY = `ckd_goals_${hn}`;
+  const [goals, setGoals] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem(KEY) || "null") || { egfr:"", bp:"", k:"", notes:"" }; }
+    catch(e) { return { egfr:"", bp:"", k:"", notes:"" }; }
+  });
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(goals);
+
+  function save() {
+    setGoals(draft);
+    localStorage.setItem(KEY, JSON.stringify(draft));
+    setEditing(false);
+  }
+
+  const hasGoals = goals.egfr || goals.bp || goals.k || goals.notes;
+
+  return (
+    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:14,
+      padding:"14px 18px", marginBottom:14 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: hasGoals && !editing ? 12 : 0 }}>
+        <span style={{ fontSize:16 }}>🎯</span>
+        <span style={{ fontSize:14, fontWeight:700, color:"var(--ink)", flex:1 }}>เป้าหมายการรักษา</span>
+        <button onClick={() => { setDraft(goals); setEditing(e => !e); }}
+          style={{ fontSize:12, padding:"4px 10px", borderRadius:8, border:"1px solid var(--border)",
+            background:"var(--surface-2)", cursor:"pointer", fontWeight:600, fontFamily:"var(--sans)",
+            color:"var(--ink-2)" }}>
+          {editing ? "ยกเลิก" : "แก้ไข"}
+        </button>
+      </div>
+      {editing ? (
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:12 }}>
+          {[["egfr","เป้า eGFR","เช่น ≥ 25 mL/min"],["bp","เป้า BP","เช่น < 130/80 mmHg"],["k","เป้า K⁺","เช่น 3.5–5.0 mmol/L"]].map(([k,label,ph]) => (
+            <div key={k} style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:12, fontWeight:600, color:"var(--ink-2)", width:80, flexShrink:0 }}>{label}</span>
+              <input value={draft[k]} onChange={e => setDraft(d => ({...d, [k]: e.target.value}))}
+                placeholder={ph}
+                style={{ flex:1, padding:"7px 10px", borderRadius:8, border:"1px solid var(--border)",
+                  fontFamily:"var(--sans)", fontSize:13, background:"var(--surface)", color:"var(--ink)" }} />
+            </div>
+          ))}
+          <div>
+            <span style={{ fontSize:12, fontWeight:600, color:"var(--ink-2)" }}>หมายเหตุ</span>
+            <textarea value={draft.notes} onChange={e => setDraft(d => ({...d, notes: e.target.value}))}
+              placeholder="แผนการรักษาหรือหมายเหตุเพิ่มเติม"
+              rows={2}
+              style={{ width:"100%", marginTop:4, padding:"7px 10px", borderRadius:8, border:"1px solid var(--border)",
+                fontFamily:"var(--sans)", fontSize:13, resize:"vertical", background:"var(--surface)", color:"var(--ink)" }} />
+          </div>
+          <button onClick={save}
+            style={{ padding:"9px 18px", borderRadius:9, border:"none", background:"var(--brand)",
+              color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"var(--sans)",
+              alignSelf:"flex-start" }}>
+            บันทึกเป้าหมาย
+          </button>
+        </div>
+      ) : hasGoals ? (
+        <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginTop:10 }}>
+          {[["egfr","eGFR"],["bp","BP"],["k","K⁺"]].filter(([k]) => goals[k]).map(([k, label]) => (
+            <div key={k} style={{ padding:"6px 12px", borderRadius:9, background:"var(--brand-soft)",
+              border:"1px solid rgba(13,148,136,.25)" }}>
+              <span style={{ fontSize:10.5, color:"var(--brand-deep)", fontWeight:600 }}>{label} </span>
+              <span style={{ fontSize:13, fontWeight:800, color:"var(--ink)", fontFamily:"var(--mono)" }}>{goals[k]}</span>
+            </div>
+          ))}
+          {goals.notes && <div style={{ fontSize:12.5, color:"var(--ink-2)", fontStyle:"italic", alignSelf:"center" }}>{goals.notes}</div>}
+        </div>
+      ) : (
+        <div style={{ fontSize:12.5, color:"var(--ink-2)", marginTop:8 }}>
+          ยังไม่ได้ตั้งเป้าหมาย — กด "แก้ไข" เพื่อเพิ่ม
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- รายละเอียด + ประวัติ ---------- */
 function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   const history = records.filter((r) => r.hn === hn).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -1695,6 +1845,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
 
         {/* selected record detail */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <CareGoalsPanel hn={hn} />
           <DetailCard title="ค่าทางคลินิก" icon="kidney">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(90px,1fr))", gap: 12 }}>
               <Stat l="Scr" v={rec.scr} u="mg/dL" />
