@@ -44,10 +44,10 @@ function MiniSpark({ pts, color }) {
   }));
   return (
     <svg width={W} height={H} style={{ display: "block", overflow: "visible" }}>
-      <polyline points={xy.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}
+      <polyline className="spark-draw" pathLength={1} points={xy.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}
         fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
       {xy.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={p.current ? 3 : 2}
+        <circle key={i} className="spark-dot" cx={p.x} cy={p.y} r={p.current ? 3 : 2}
           fill={p.current ? color : "var(--surface)"} stroke={color} strokeWidth={1.2} />
       ))}
     </svg>

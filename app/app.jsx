@@ -493,7 +493,7 @@ function App() {
               const active = n._more ? overflowActive : (route.view === n.v || (n.v === "patients" && route.view === "patient"));
               return (
                 <button key={n.v} className="bottom-nav-btn" onClick={() => n._more ? setMoreOpen(true) : setRoute({ view: n.v })} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, border: "none", background: "none", cursor: "pointer", fontFamily: "var(--sans)", padding: "6px 2px", transition: "all 0.15s", color: active ? "var(--brand)" : "var(--ink-2)" }}>
-                  <div style={{ width: active ? 36 : 28, height: 28, borderRadius: active ? 10 : 8, background: active ? "var(--brand-soft)" : "transparent", display: "grid", placeItems: "center", transition: "all 0.15s" }}>
+                  <div className={active ? "nav-pill-pop" : undefined} style={{ width: active ? 36 : 28, height: 28, borderRadius: active ? 10 : 8, background: active ? "var(--brand-soft)" : "transparent", display: "grid", placeItems: "center", transition: "all 0.15s" }}>
                     <Icon name={n.icon} size={19} color={active ? "var(--brand)" : "var(--ink-2)"} />
                   </div>
                   <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, lineHeight: 1 }}>{n.label}</span>

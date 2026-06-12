@@ -234,7 +234,8 @@ function PatientCard({ r, onOpen, idx }) {
         {r.risk.band !== "low" && r.risk.factors && r.risk.factors.length > 0 && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display:"flex", flexWrap:"wrap", gap:4 }}>
             {r.risk.factors.slice(0, 3).map((fa, i) => (
-              <span key={i} style={{ fontSize:10.5, padding:"2px 7px", borderRadius:6,
+              <span key={i} className="chip-pop" style={{ fontSize:10.5, padding:"2px 7px", borderRadius:6,
+                animationDelay: `${0.12 + i * 0.06}s`,
                 background: r.risk.band === "high" ? "#fef2f2" : "#fffbeb",
                 color: r.risk.band === "high" ? "#b91c1c" : "#92400e",
                 border: `1px solid ${r.risk.band === "high" ? "#fca5a5" : "#fde68a"}`,
