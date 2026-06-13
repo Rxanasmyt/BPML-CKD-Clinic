@@ -121,7 +121,7 @@ function DeleteLogPage() {
                       </button>
                     )}
                   </div>
-                  <pre style={{ fontSize:11, color:"var(--ink-2)", fontFamily:"var(--mono)", whiteSpace:"pre-wrap", wordBreak:"break-all", margin:0, maxHeight:240, overflowY:"auto" }}>{JSON.stringify(JSON.parse(log.snapshot), null, 2)}</pre>
+                  <pre style={{ fontSize:11, color:"var(--ink-2)", fontFamily:"var(--mono)", whiteSpace:"pre-wrap", wordBreak:"break-all", margin:0, maxHeight:240, overflowY:"auto" }}>{(() => { try { return JSON.stringify(JSON.parse(log.snapshot), null, 2); } catch (e) { return typeof log.snapshot === "string" ? log.snapshot : "— ข้อมูล snapshot เสียหาย —"; } })()}</pre>
                 </div>
               )}
             </div>
@@ -339,7 +339,11 @@ function PatientsList({ records, user, onOpenPatient, onNew }) {
   const [drpF, setDrpF] = React.useState("all");
 
   const scope = records; // ทุก role เห็นข้อมูลผู้ป่วยทั้งหมด
-  const all   = latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r), progression: medProgression(records, r.hn), _prediction: predictEgfr(records, r.hn) }));
+  // memoize: medProgression + predictEgfr วนทุก record — กันคำนวณซ้ำทุกครั้งที่พิมพ์ค้นหา/กรอง
+  const all   = React.useMemo(
+    () => latestPerPatient(scope).map((r) => ({ ...r, risk: computeRisk(r), progression: medProgression(records, r.hn), _prediction: predictEgfr(records, r.hn) })),
+    [records]
+  );
   const due7  = isoAddDays(7), today = todayISO();
   let rows = [...all];
 

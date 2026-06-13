@@ -151,8 +151,7 @@ function GradKpi({ label, value, unit, sub, icon, grad, textColor="#fff", spark,
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginBottom: 4, position: "relative" }}>
-        <span className="num-pop" key={display}
-          className={flashing ? "val-flash" : undefined}
+        <span className={`num-pop${flashing ? " val-flash" : ""}`} key={display}
           style={{ fontFamily: "var(--mono)", fontSize: 42, fontWeight: 800, color: textColor, lineHeight: 1,
             textShadow: "0 2px 12px rgba(0,0,0,.2)" }}>
           {display}
@@ -1714,7 +1713,7 @@ function OutcomeHeatmap({ scope }) {
               ? `color-mix(in srgb, ${getColor(m.rate)} ${Math.max(20, m.rate||20)}%, var(--surface-2))`
               : 'var(--surface-2)',
               display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-              border:`1px solid ${getColor(m.rate)}33`, cursor:"default",
+              border: m.rate !== null ? `1px solid ${getColor(m.rate)}33` : "1px solid var(--border)", cursor:"default",
               transition:"transform 0.15s", padding:4 }}
             onMouseEnter={e => e.currentTarget.style.transform='scale(1.1)'}
             onMouseLeave={e => e.currentTarget.style.transform=''}>
