@@ -366,7 +366,7 @@ function App() {
     page = <PatientsList records={records} user={user} onNew={() => setRoute({ view: "form" })}
       onOpenPatient={(hn) => setRoute({ view: "patient", hn })} />;
   else if (route.view === "patient")
-    page = <PatientDetail hn={route.hn} records={records} user={user} onBack={() => setRoute({ view: "patients" })}
+    page = <PatientDetail key={route.hn} hn={route.hn} records={records} user={user} onBack={() => setRoute({ view: "patients" })}
       onEdit={(rec) => setRoute({ view: "form", editing: rec })}
       onDelete={deleteRecord}
       onNew={(p) => setRoute({ view: "form", editing: {

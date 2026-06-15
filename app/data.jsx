@@ -172,7 +172,7 @@ function randomSalt() {
 /* ── Date helpers — แหล่งเดียวสำหรับ "วันนี้" ทั้งระบบ (แทนวันที่ hardcode) ── */
 function todayDate() { return new Date(); }                                   // Date object ของวันนี้จริง
 function todayISO() { const d = new Date(); const off = d.getTimezoneOffset(); return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10); } // "YYYY-MM-DD" ตามเวลาท้องถิ่น
-function isoAddDays(n) { const d = new Date(); d.setDate(d.getDate() + n); const off = d.getTimezoneOffset(); return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10); } // วันนี้ + n วัน
+function isoAddDays(n) { const d = new Date(); const off = d.getTimezoneOffset(); d.setDate(d.getDate() + n); return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10); } // วันนี้ + n วัน (จับ offset ก่อนเลื่อนวัน กัน DST เพี้ยน)
 function monthStartISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; } // วันแรกของเดือนนี้
 
 /* ── Haptic feedback — สั่นเบา ๆ บนมือถือ (ไม่ทำงานบน desktop) ── */

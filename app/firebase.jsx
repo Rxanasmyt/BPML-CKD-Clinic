@@ -42,6 +42,10 @@ try { _app = firebase.app(); } catch (e) { _app = firebase.initializeApp(FB_CONF
 _auth = firebase.auth();
 _db   = firebase.firestore();
 
+// กัน Firestore โยน error เมื่อ field มีค่า undefined (เช่น optional field ที่ไม่ได้กรอก)
+// ต้องเรียกก่อน operation อื่น ๆ ทั้งหมด
+try { _db.settings({ ignoreUndefinedProperties: true }); } catch (e) {}
+
 _db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
   if (err.code !== "failed-precondition" && err.code !== "unimplemented")
     console.warn("Persistence:", err.code);

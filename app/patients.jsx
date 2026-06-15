@@ -288,6 +288,8 @@ function PatientCard({ r, onOpen, idx }) {
           if (!pred || !pred.declining) return null;
           if (!pred.monthsTo30 && !pred.monthsTo15) return null;
           const months = pred.monthsTo15 || pred.monthsTo30;
+          // แสดงเฉพาะช่วงเวลาที่มีนัยทางคลินิก (ภายใน 5 ปี) — กันค่าคาดการณ์ที่ยาวเกินจริง
+          if (!months || months > 60) return null;
           const label = pred.monthsTo15 ? 'Stage 5' : 'Stage 4';
           return (
             <div style={{ marginTop:6, padding:"4px 9px", borderRadius:8, background:"#fff7ed",
