@@ -1233,71 +1233,50 @@ function LineReminderModal({ rec, patient, onClose }) {
 }
 
 /* =========================================================================
-   AiSummaryModal — สรุป BPML สำหรับแพทย์ด้วย Claude AI
+   AiSummaryModal — ผู้ช่วยเภสัชกร AI (Claude Opus) — 4 โหมด + streaming
+   ใช้แกนกลางจาก ai.jsx: callClaudeStream / buildPatientContext / AI_PATIENT_MODES
    ========================================================================= */
-function AiSummaryModal({ rec, patient, onClose }) {
-  const [apiKey, setApiKey] = React.useState(() => localStorage.getItem("pharm_ckd_claude_key") || "");
+function AiSummaryModal({ rec, patient, records, onClose }) {
+  const MODES = window.AI_PATIENT_MODES || [];
+  const [apiKey, setApiKey] = React.useState(() => (window.getClaudeKey ? window.getClaudeKey() : ""));
   const [keyInput, setKeyInput] = React.useState("");
+  const [mode, setMode] = React.useState(MODES[0]?.key || "doctor");
   const [loading, setLoading] = React.useState(false);
-  const [result, setResult] = React.useState(null);
+  const [result, setResult] = React.useState("");
   const [error, setError] = React.useState(null);
   const [copied, setCopied] = React.useState(false);
+  const abortRef = React.useRef(null);
+
+  // ยกเลิก stream ที่ค้างเมื่อปิด modal
+  React.useEffect(() => () => { if (abortRef.current) abortRef.current.abort(); }, []);
 
   function saveKey() {
     const k = keyInput.trim();
     if (!k) return;
-    localStorage.setItem("pharm_ckd_claude_key", k);
-    setApiKey(k);
-    setKeyInput("");
+    window.setClaudeKey && window.setClaudeKey(k);
+    setApiKey(k); setKeyInput("");
   }
 
-  async function generate() {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    const drpLabels = (rec.drps || []).map((k) => DRP_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
-    const intLabels = (rec.interventions || []).map((k) => INTERVENTION_OPTIONS.find((o) => o.key === k)?.th).filter(Boolean);
-    const medList = (rec.meds || []).map((m) => `${m.drug} ${m.strength} (${m.dose || "–"})`).join(", ") || "ไม่มีรายการยา";
-    const otcItems = rec.otcHerbal ? (rec.otcDetail || "มีสมุนไพร/ยานอก") : "ไม่มี";
-    const drpText = drpLabels.length ? drpLabels.join(", ") : "ไม่พบ";
-    const intText = intLabels.length ? intLabels.join(", ") : "ไม่มี";
-    const outcomeText = rec.outcome === "accepted" ? "แก้ไขแล้ว" : rec.outcome === "not_accepted" ? `ยังไม่แก้ไข — ${rec.outcomeReason || ""}` : "ไม่ระบุ";
-
-    const prompt = `คุณคือเภสัชกรผู้เชี่ยวชาญด้าน CKD สรุป BPML ต่อไปนี้เป็นข้อความสั้น ชัดเจน สำหรับแพทย์ผู้ดูแล ไม่เกิน 5 bullet points ภาษาไทย:
-
-ผู้ป่วย: ${patient.name} อายุ ${patient.age} ปี HN ${patient.hn}
-CKD ระยะ ${rec.ckdStage} eGFR ${rec.egfr || "–"} K⁺ ${rec.k || "–"}
-รายการยา: ${medList}
-สมุนไพร/OTC: ${otcItems}
-DRP ที่พบ: ${drpText}
-การแทรกแซง: ${intText}
-ผล: ${outcomeText}`;
-
+  async function generate(modeKey) {
+    const useMode = modeKey || mode;
+    const def = MODES.find((m) => m.key === useMode) || MODES[0];
+    setError(null); setResult(""); setLoading(true);
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController(); abortRef.current = ctrl;
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 600,
-          messages: [{ role: "user", content: prompt }],
-        }),
+      const context = window.buildPatientContext
+        ? window.buildPatientContext(rec, patient, records || [])
+        : `ผู้ป่วย ${patient?.name} HN ${rec.hn} CKD ${rec.ckdStage} eGFR ${rec.egfr}`;
+      const prompt = `${def.instruct}\n\n=== ข้อมูลผู้ป่วย (ใช้เฉพาะข้อมูลนี้ ห้ามเดา) ===\n${context}`;
+      await window.callClaudeStream({
+        apiKey, system: def.system, prompt, maxTokens: 2048, signal: ctrl.signal,
+        onDelta: (_d, full) => setResult(full),
       });
-      if (resp.status === 401) throw new Error("API key ไม่ถูกต้อง (401 Unauthorized)");
-      if (resp.status === 429) throw new Error("Rate limit — กรุณารอสักครู่แล้วลองใหม่");
-      if (!resp.ok) throw new Error(`เกิดข้อผิดพลาด HTTP ${resp.status}`);
-      const data = await resp.json();
-      setResult(data.content?.[0]?.text || "ไม่มีข้อความตอบกลับ");
     } catch (e) {
-      if (e.name === "TypeError") setError("ไม่สามารถเชื่อมต่อเครือข่าย กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต");
+      if (e.name === "AbortError") { /* ปิด modal ระหว่างทำงาน */ }
+      else if (e.name === "TypeError") setError("เชื่อมต่อเครือข่ายไม่ได้ — ตรวจสอบอินเทอร์เน็ต");
       else setError(e.message);
-    }
-    setLoading(false);
+    } finally { setLoading(false); }
   }
 
   function copyToClipboard() {
@@ -1305,33 +1284,31 @@ DRP ที่พบ: ${drpText}
     navigator.clipboard.writeText(result).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }
 
+  const curMode = MODES.find((m) => m.key === mode) || MODES[0] || {};
+
   return (
     <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 950, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}>
-      <div className="modal-card" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 560, boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
+      <div className="modal-card" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, width: "100%", maxWidth: 600, maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
         {/* Modal header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--border)", background: "linear-gradient(135deg,rgba(13,148,136,.10),rgba(124,58,237,.08))", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 20 }}>🤖</span>
-            <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>สรุป BPML สำหรับแพทย์ (AI)</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>ผู้ช่วยเภสัชกร AI</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0d9488", background: "var(--brand-soft)", padding: "2px 8px", borderRadius: 99 }}>Opus 4.8</span>
           </div>
           <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><Icon name="x" size={20} color="var(--ink-2)" /></button>
         </div>
 
-        <div style={{ padding: "22px 24px" }}>
+        <div style={{ padding: "20px 24px", overflowY: "auto" }}>
           {/* API key entry if no key stored */}
           {!apiKey && (
             <div style={{ marginBottom: 18, padding: "14px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 12 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>กรุณาใส่ Claude API Key</div>
-              <div style={{ fontSize: 12.5, color: "#92400e", marginBottom: 10 }}>ต้องการ Anthropic API Key เพื่อใช้งาน AI สรุป จะเก็บไว้ใน localStorage ของเครื่องนี้เท่านั้น</div>
+              <div style={{ fontSize: 12.5, color: "#92400e", marginBottom: 10 }}>ต้องการ Anthropic API Key เพื่อใช้งาน AI จะเก็บไว้ใน localStorage ของเครื่องนี้เท่านั้น</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="password"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder="sk-ant-api03-..."
+                <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} placeholder="sk-ant-api03-..."
                   style={{ flex: 1, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontFamily: "monospace", background: "var(--surface)", color: "var(--ink)", outline: "none" }}
-                  onKeyDown={(e) => e.key === "Enter" && saveKey()}
-                />
+                  onKeyDown={(e) => e.key === "Enter" && saveKey()} />
                 <button onClick={saveKey} style={{ padding: "9px 16px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "var(--sans)", whiteSpace: "nowrap" }}>บันทึก</button>
               </div>
             </div>
@@ -1340,59 +1317,68 @@ DRP ที่พบ: ${drpText}
           {apiKey && (
             <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--ink-2)" }}>
               <span style={{ width: 8, height: 8, borderRadius: 99, background: "#16a34a" }} />
-              <span>ใช้ API Key ที่บันทึกไว้</span>
-              <button onClick={() => { localStorage.removeItem("pharm_ckd_claude_key"); setApiKey(""); }}
+              <span>เชื่อมต่อ API แล้ว</span>
+              <button onClick={() => { window.setClaudeKey && window.setClaudeKey(""); setApiKey(""); }}
                 style={{ marginLeft: "auto", fontSize: 11.5, color: "#b91c1c", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--sans)" }}>เปลี่ยน Key</button>
             </div>
           )}
 
           {/* Patient info summary */}
-          <div style={{ padding: "10px 14px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12.5, color: "var(--ink-2)", marginBottom: 16, lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--ink)" }}>{patient.name}</strong> · HN {patient.hn} · อายุ {patient.age} ปี · CKD ระยะ {rec.ckdStage} · eGFR {rec.egfr || "–"} · K⁺ {rec.k || "–"}
+          <div style={{ padding: "10px 14px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12.5, color: "var(--ink-2)", marginBottom: 14, lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--ink)" }}>{patient?.name}</strong> · HN {rec.hn} · อายุ {rec.age} ปี · CKD ระยะ {rec.ckdStage} · eGFR {rec.egfr || "–"} · K⁺ {rec.k || "–"}
+          </div>
+
+          {/* Mode selector */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, marginBottom: 16 }}>
+            {MODES.map((m) => {
+              const on = m.key === mode;
+              return (
+                <button key={m.key} disabled={loading}
+                  onClick={() => { setMode(m.key); setResult(""); setError(null); }}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, cursor: loading ? "default" : "pointer",
+                    border: on ? "1.5px solid var(--brand)" : "1px solid var(--border)", background: on ? "var(--brand-soft)" : "var(--surface)",
+                    color: on ? "var(--brand-deep)" : "var(--ink-2)", fontWeight: on ? 700 : 500, fontSize: 12.5, fontFamily: "var(--sans)", textAlign: "left", transition: "all .15s" }}>
+                  <span style={{ fontSize: 16 }}>{m.emoji}</span>{m.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Generate button */}
           {!result && !loading && (
-            <button
-              onClick={generate}
-              disabled={!apiKey}
-              style={{ width: "100%", padding: "12px", background: apiKey ? "#0d9488" : "var(--surface-2)", color: apiKey ? "#fff" : "var(--ink-2)", border: apiKey ? "none" : "1px solid var(--border)", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: apiKey ? "pointer" : "not-allowed", fontFamily: "var(--sans)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              🤖 สรุป AI สำหรับแพทย์
+            <button onClick={() => generate()} disabled={!apiKey}
+              style={{ width: "100%", padding: "12px", background: apiKey ? "linear-gradient(135deg,#0d9488,#0f766e)" : "var(--surface-2)", color: apiKey ? "#fff" : "var(--ink-2)", border: apiKey ? "none" : "1px solid var(--border)", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: apiKey ? "pointer" : "not-allowed", fontFamily: "var(--sans)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              {curMode.emoji} {curMode.label}
             </button>
-          )}
-
-          {/* Loading spinner */}
-          {loading && (
-            <div style={{ textAlign: "center", padding: "32px 0" }}>
-              <div style={{ width: 36, height: 36, border: "3px solid var(--border)", borderTopColor: "#0d9488", borderRadius: "50%", animation: "spin .7s linear infinite", margin: "0 auto 14px" }} />
-              <div style={{ fontSize: 13.5, color: "var(--ink-2)" }}>กำลังสร้างสรุป AI...</div>
-            </div>
           )}
 
           {/* Error */}
           {error && (
-            <div style={{ padding: "12px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, color: "#b91c1c", fontSize: 13.5, display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14 }}>
+            <div style={{ padding: "12px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, color: "#b91c1c", fontSize: 13.5, display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12 }}>
               <Icon name="alert" size={16} color="#b91c1c" />
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: 4 }}>เกิดข้อผิดพลาด</div>
-                <div>{error}</div>
-              </div>
+              <div><div style={{ fontWeight: 700, marginBottom: 4 }}>เกิดข้อผิดพลาด</div><div>{error}</div></div>
             </div>
           )}
           {error && (
-            <button onClick={generate} disabled={!apiKey} style={{ padding: "9px 18px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>ลองใหม่</button>
+            <button onClick={() => generate()} disabled={!apiKey} style={{ padding: "9px 18px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>ลองใหม่</button>
           )}
 
-          {/* Result */}
-          {result && (
+          {/* Streaming / Result */}
+          {(result || loading) && (
             <div>
-              <div style={{ padding: "16px 18px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 14, color: "var(--ink)", lineHeight: 1.75, whiteSpace: "pre-wrap", marginBottom: 12 }}>{result}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={copyToClipboard} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: copied ? "#16a34a" : "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
-                  {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
-                </button>
-                <button onClick={() => { setResult(null); setError(null); }} style={{ padding: "9px 16px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" }}>สร้างใหม่</button>
+              <div style={{ padding: "16px 18px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 14, color: "var(--ink)", lineHeight: 1.75, whiteSpace: "pre-wrap", marginBottom: 12, minHeight: 60 }}>
+                {result}
+                {loading && <span className="ai-caret" style={{ display: "inline-block", width: 8, height: 16, background: "#0d9488", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />}
+                {loading && !result && <span style={{ color: "var(--ink-2)", fontSize: 13 }}>กำลังวิเคราะห์...</span>}
               </div>
+              {!loading && result && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={copyToClipboard} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", background: copied ? "#16a34a" : "#0d9488", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
+                    {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+                  </button>
+                  <button onClick={() => { setResult(""); setError(null); }} style={{ padding: "9px 16px", background: "var(--surface)", color: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "var(--sans)" }}>สร้างใหม่</button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1730,7 +1716,7 @@ function PatientDetail({ hn, records, user, onBack, onEdit, onNew, onDelete }) {
   return (
     <div style={{ padding: "clamp(18px,2.4vw,30px)", maxWidth: 1100, margin: "0 auto" }}>
       {printOpen && <PrintModal rec={rec} patient={cur} onClose={() => setPrintOpen(false)} />}
-      {aiOpen && <AiSummaryModal rec={rec} patient={cur} onClose={() => setAiOpen(false)} />}
+      {aiOpen && <AiSummaryModal rec={rec} patient={cur} records={records} onClose={() => setAiOpen(false)} />}
       {lineOpen && <LineReminderModal rec={rec} patient={cur} onClose={() => setLineOpen(false)} />}
       {deleteTarget && <ConfirmDeleteModal rec={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={(reason) => { setDeleteTarget(null); onDelete(deleteTarget, reason); }} />}
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}><Icon name="chevron" size={16} color="var(--ink-2)" />กลับ</button>

@@ -799,6 +799,12 @@ function Dashboard({ records, user, onOpenPatient, onNew, onGoPatients }) {
         </div>
       </div>
 
+      {/* ── Pharmaceutical Care KPIs ── */}
+      <PharmaCareKpis scope={scope} records={records} />
+
+      {/* ── AI Clinic Insight ── */}
+      <ClinicAiPanel scope={scope} records={records} />
+
       {/* ── ROW 4: Population Analytics ── */}
       <PopulationAnalytics scope={scope} records={records} />
 
@@ -1786,4 +1792,132 @@ function EgfrCohortChart({ records }) {
   );
 }
 
-Object.assign(window, { Dashboard, PageHead, Kpi, Card, Empty, primaryBtn, followBtn, latestPerPatient, PopulationAnalytics, DRPRiskAnalysis, useCounter, useMounted, addRipple });
+/* =========================================================================
+   PharmaCareKpis — ตัวชี้วัดการบริบาลทางเภสัชกรรม (ครอบคลุม)
+   ========================================================================= */
+function PharmaCareKpis({ scope, records }) {
+  const k = React.useMemo(
+    () => (window.computePharmKpis ? window.computePharmKpis(scope, records) : null),
+    [scope, records]
+  );
+  if (!k) return null;
+  const cards = [
+    { icon: "💊", label: "DRP ต่อ visit", value: k.drpPerVisit, sub: `รวม ${k.totalDrp} ปัญหา`, color: "#7c3aed" },
+    { icon: "✅", label: "Acceptance Rate", value: `${k.acceptRate}%`, sub: `${k.accepted}/${k.withOutcome} แทรกแซง`, color: "#16a34a" },
+    { icon: "🔄", label: "DRP Resolution", value: `${k.resolveRate}%`, sub: `แก้แล้ว ${k.resolved}/${k.totalFu}`, color: "#0284c7" },
+    { icon: "📊", label: "ยาเฉลี่ย/ราย", value: k.avgMeds, sub: `polypharmacy ${k.polyRate}%`, color: "#d97706" },
+    { icon: "🎯", label: "ความร่วมมือใช้ยา", value: `${k.adhereRate}%`, sub: `ไม่ตรงสั่ง ${k.nonAdhereN} ราย`, color: k.adhereRate >= 80 ? "#16a34a" : "#dc2626" },
+    { icon: "⚗️", label: "Polypharmacy", value: k.polyN, sub: `ใช้ยา ≥5 รายการ`, color: "#ea580c" },
+  ];
+  return (
+    <div data-reveal style={{ background: "var(--surface)", borderRadius: 18, padding: "18px 22px", marginBottom: 16, border: "1px solid var(--border)", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,var(--brand-soft),rgba(124,58,237,.18))", display: "grid", placeItems: "center" }}>
+          <span style={{ fontSize: 17 }}>📈</span>
+        </div>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0, flex: 1 }}>ตัวชี้วัดการบริบาลทางเภสัชกรรม</h3>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
+        {cards.map(({ icon, label, value, sub, color }) => (
+          <div key={label} style={{ padding: "12px 14px", borderRadius: 12, background: `${color}0d`, border: `1px solid ${color}33` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+              <span style={{ fontSize: 16 }}>{icon}</span>
+              <span style={{ fontSize: 11, color: "var(--ink-2)", fontWeight: 600 }}>{label}</span>
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 24, fontWeight: 800, color }}>{value}</div>
+            <div style={{ fontSize: 10.5, color: "var(--ink-2)", marginTop: 2 }}>{sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   ClinicAiPanel — AI วิเคราะห์ภาพรวมคลินิก (streaming, Claude Opus)
+   ========================================================================= */
+function ClinicAiPanel({ scope, records }) {
+  const [apiKey, setApiKey] = React.useState(() => (window.getClaudeKey ? window.getClaudeKey() : ""));
+  const [keyInput, setKeyInput] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [result, setResult] = React.useState("");
+  const [error, setError] = React.useState(null);
+  const abortRef = React.useRef(null);
+  React.useEffect(() => () => { if (abortRef.current) abortRef.current.abort(); }, []);
+
+  function saveKey() {
+    const v = keyInput.trim(); if (!v) return;
+    window.setClaudeKey && window.setClaudeKey(v); setApiKey(v); setKeyInput("");
+  }
+
+  async function analyze() {
+    setError(null); setResult(""); setLoading(true);
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController(); abortRef.current = ctrl;
+    try {
+      const ctx = window.buildClinicContext ? window.buildClinicContext(scope, records) : "";
+      const prompt = `คุณคือเภสัชกรหัวหน้าคลินิกโรคไตเรื้อรัง วิเคราะห์ภาพรวมคลินิกจากข้อมูลด้านล่าง แล้วสรุปเป็นภาษาไทย:\n` +
+        `1) ภาพรวมและประเด็นที่น่ากังวลที่สุด\n2) ผู้ป่วยกลุ่มที่ต้องจัดการเร่งด่วน (ส่งต่อ/eGFR ลดเร็ว/DRP ค้าง) พร้อมเหตุผล\n` +
+        `3) แนวโน้ม DRP ที่พบบ่อยและข้อเสนอเชิงระบบเพื่อลดปัญหา\n4) คำแนะนำเชิงปฏิบัติ 3-5 ข้อสำหรับสัปดาห์นี้\n` +
+        `ใช้เฉพาะข้อมูลที่ให้ ห้ามเดา กระชับ ตรงประเด็น\n\n=== ภาพรวมคลินิก ===\n${ctx}`;
+      await window.callClaudeStream({
+        apiKey, prompt, maxTokens: 2048, signal: ctrl.signal,
+        system: "คุณคือเภสัชกรหัวหน้าคลินิก CKD ที่ให้ข้อมูลเชิงวิเคราะห์ระดับประชากร อิงหลักฐานและตัวเลขจากข้อมูลที่ให้เท่านั้น",
+        onDelta: (_d, full) => setResult(full),
+      });
+    } catch (e) {
+      if (e.name === "AbortError") { /* unmounted */ }
+      else if (e.name === "TypeError") setError("เชื่อมต่อเครือข่ายไม่ได้");
+      else setError(e.message);
+    } finally { setLoading(false); }
+  }
+
+  if (!scope || scope.length === 0) return null;
+
+  return (
+    <div data-reveal style={{ background: "var(--surface)", borderRadius: 18, padding: "18px 22px", marginBottom: 16, border: "1px solid var(--border)", boxShadow: "0 2px 12px rgba(0,0,0,.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,rgba(13,148,136,.18),rgba(124,58,237,.18))", display: "grid", placeItems: "center" }}>
+          <span style={{ fontSize: 17 }}>🤖</span>
+        </div>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", margin: 0 }}>AI วิเคราะห์ภาพรวมคลินิก</h3>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0d9488", background: "var(--brand-soft)", padding: "2px 8px", borderRadius: 99 }}>Opus 4.8</span>
+        {apiKey && !loading && (
+          <button onClick={analyze} style={{ marginLeft: "auto", padding: "8px 16px", background: "linear-gradient(135deg,#0d9488,#0f766e)", color: "#fff", border: "none", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "var(--sans)" }}>
+            {result ? "วิเคราะห์ใหม่" : "เริ่มวิเคราะห์"}
+          </button>
+        )}
+      </div>
+
+      {!apiKey && (
+        <div style={{ padding: "12px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 12 }}>
+          <div style={{ fontSize: 12.5, color: "#92400e", marginBottom: 10 }}>ใส่ Claude API Key เพื่อใช้ AI วิเคราะห์ (เก็บใน localStorage เครื่องนี้เท่านั้น)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} placeholder="sk-ant-api03-..."
+              onKeyDown={(e) => e.key === "Enter" && saveKey()}
+              style={{ flex: 1, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, fontFamily: "monospace", background: "var(--surface)", color: "var(--ink)", outline: "none" }} />
+            <button onClick={saveKey} style={{ padding: "9px 16px", background: "#0d9488", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "var(--sans)" }}>บันทึก</button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ padding: "11px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, color: "#b91c1c", fontSize: 13, marginBottom: 10 }}>{error}</div>
+      )}
+
+      {(result || loading) && (
+        <div style={{ padding: "16px 18px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 14, color: "var(--ink)", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>
+          {result}
+          {loading && <span style={{ display: "inline-block", width: 8, height: 16, background: "#0d9488", marginLeft: 2, verticalAlign: "text-bottom", animation: "blink 1s step-end infinite" }} />}
+          {loading && !result && <span style={{ color: "var(--ink-2)", fontSize: 13 }}>กำลังวิเคราะห์ภาพรวม...</span>}
+        </div>
+      )}
+
+      {apiKey && !result && !loading && !error && (
+        <div style={{ fontSize: 12.5, color: "var(--ink-2)", padding: "4px 2px" }}>กด "เริ่มวิเคราะห์" เพื่อให้ AI สรุปภาพรวมคลินิก ผู้ป่วยที่ต้องจัดการเร่งด่วน และข้อเสนอแนะ</div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { Dashboard, PageHead, Kpi, Card, Empty, primaryBtn, followBtn, latestPerPatient, PopulationAnalytics, DRPRiskAnalysis, PharmaCareKpis, ClinicAiPanel, useCounter, useMounted, addRipple });

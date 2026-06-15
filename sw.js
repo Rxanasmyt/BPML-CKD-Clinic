@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pharm-ckd-v52';
+const CACHE_NAME = 'pharm-ckd-v53';
 const ASSETS = [
   '/',
   '/index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   '/app/herb_db.jsx',
   '/app/drp_engine.jsx',
   '/app/data.jsx',
+  '/app/ai.jsx',
   '/app/theme.jsx',
   '/app/tweaks-panel.jsx',
   '/app/firebase.jsx',

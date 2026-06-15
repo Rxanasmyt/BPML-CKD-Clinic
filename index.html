@@ -73,6 +73,7 @@
     100% { background-position:  600px 0; }
   }
   @keyframes spin      { to { transform:rotate(360deg); } }
+  @keyframes blink     { 0%,100% { opacity:1; } 50% { opacity:0; } }
   @keyframes gradient-pan {
     0%   { background-position: 0% 50%; }
     50%  { background-position: 100% 50%; }
@@ -412,6 +413,7 @@
 <script type="text/babel" src="app/herb_db.jsx"></script>
 <script type="text/babel" src="app/drp_engine.jsx"></script>
 <script type="text/babel" src="app/data.jsx"></script>
+<script type="text/babel" src="app/ai.jsx"></script>
 <script type="text/babel" src="app/theme.jsx"></script>
 <script type="text/babel" src="app/tweaks-panel.jsx"></script>
 <script type="text/babel" src="app/firebase.jsx"></script>
